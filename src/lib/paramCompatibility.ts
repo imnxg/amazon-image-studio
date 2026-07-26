@@ -1,13 +1,24 @@
 import { DEFAULT_OUTPUT_COMPRESSION, DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
-import { getActiveApiProfile } from './apiProfiles'
+import { getActiveApiProfile, isVolcengineSeedreamProModel } from './apiProfiles'
 import { normalizeImageSize } from './size'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
+export const DEFAULT_VOLCENGINE_IMAGE_SIZE = '2048x2048'
 export const MAX_FAL_OUTPUT_IMAGES = 4
+export const MAX_VOLCENGINE_OUTPUT_IMAGES = 14
+export const MAX_VOLCENGINE_PRO_OUTPUT_IMAGES = 1
 export const MAX_OPENAI_OUTPUT_IMAGES = 10
 
 export function getOutputImageLimitForSettings(settings: AppSettings) {
-  return getActiveApiProfile(settings).provider === 'fal' ? MAX_FAL_OUTPUT_IMAGES : MAX_OPENAI_OUTPUT_IMAGES
+  const activeProfile = getActiveApiProfile(settings)
+  const provider = activeProfile.provider
+  if (provider === 'fal') return MAX_FAL_OUTPUT_IMAGES
+  if (provider === 'volcengine') {
+    return isVolcengineSeedreamProModel(activeProfile.model)
+      ? MAX_VOLCENGINE_PRO_OUTPUT_IMAGES
+      : MAX_VOLCENGINE_OUTPUT_IMAGES
+  }
+  return MAX_OPENAI_OUTPUT_IMAGES
 }
 
 export function normalizeParamsForSettings(
@@ -34,9 +45,17 @@ export function normalizeParamsForSettings(
     nextParams.output_compression = null
   }
 
+  if (activeProfile.provider === 'volcengine') {
+    if (nextParams.size === 'auto') nextParams.size = DEFAULT_VOLCENGINE_IMAGE_SIZE
+    nextParams.output_format = nextParams.output_format === 'png' ? 'png' : 'jpeg'
+    nextParams.quality = DEFAULT_PARAMS.quality
+    nextParams.moderation = DEFAULT_PARAMS.moderation
+    nextParams.output_compression = null
+  }
+
   if (nextParams.output_format === 'png') {
     nextParams.output_compression = null
-  } else if (activeProfile.provider !== 'fal') {
+  } else if (activeProfile.provider !== 'fal' && activeProfile.provider !== 'volcengine') {
     nextParams.output_compression = normalizeOutputCompression(nextParams.output_compression)
   }
 

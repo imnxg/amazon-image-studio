@@ -4,8 +4,9 @@ import type { TaskRecord } from '../types'
 import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, updateTaskInStore, retryTask } from '../store'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
-import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
+import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL, DEFAULT_VOLCENGINE_MODEL } from '../lib/apiProfiles'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { getTaskHistoryCategory, getWorkflowLabel } from '../lib/taskHistory'
 import { CodeIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -341,7 +342,11 @@ export default function TaskCard({
   const showPendingPrompt = isAgentTaskPromptPending(task)
   const showN = !isAgentTask && (task.params.n > 1 || nDisplay.isMismatch)
 
-  const defaultModelForProvider = task.apiProvider === 'fal' ? DEFAULT_FAL_MODEL : DEFAULT_IMAGES_MODEL
+  const defaultModelForProvider = task.apiProvider === 'fal'
+    ? DEFAULT_FAL_MODEL
+    : task.apiProvider === 'volcengine'
+    ? DEFAULT_VOLCENGINE_MODEL
+    : DEFAULT_IMAGES_MODEL
   const showModel = task.apiModel && task.apiModel !== defaultModelForProvider
   const isInterrupted = task.status === 'error' && task.error === '已停止生成。'
   const firstOutputImageId = task.outputImages?.[0]
@@ -353,6 +358,7 @@ export default function TaskCard({
     ? { aspectRatio: `${clampWidePreviewRatio(previewAspectRatio)} / 1` }
     : undefined
   const previewImageClass = useWidePreviewLayout ? 'h-full w-full object-contain' : 'w-full h-full object-cover'
+  const historyCategory = getTaskHistoryCategory(task)
 
   return (
     <div className="relative rounded-[var(--ios-radius-lg)]">
@@ -576,7 +582,7 @@ export default function TaskCard({
               </div>
             ) : (
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
-                {task.prompt || '(无提示词)'}
+                {task.imageEditContext?.userInstruction || task.prompt || '(无提示词)'}
               </p>
             )}
           </div>
@@ -590,6 +596,9 @@ export default function TaskCard({
               onTouchEnd={(e) => e.stopPropagation()}
               onTouchCancel={(e) => e.stopPropagation()}
             >
+              <span className={`flex flex-shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${historyCategory.workflow === 'seedream-edit' ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' : 'bg-gray-100 text-gray-600 dark:bg-white/[0.04] dark:text-gray-300'}`}>
+                {getWorkflowLabel(historyCategory.workflow)}
+              </span>
               {/* API Name */}
               {(task.apiProfileName || task.apiProvider) && (
                 <span 
@@ -698,7 +707,7 @@ export default function TaskCard({
                 </svg>
               </TaskActionButton>
               <TaskActionButton
-                tooltip="复用配置"
+                tooltip={task.category?.workflow === 'seedream-edit' ? '返回图片编辑' : '复用配置'}
                 onClick={onReuse}
                 className="p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-gray-400 hover:text-blue-500 transition"
               >
@@ -717,7 +726,7 @@ export default function TaskCard({
                 </svg>
               </TaskActionButton>
               <TaskActionButton
-                tooltip="编辑输出"
+                tooltip="在图片编辑中打开"
                 onClick={onEditOutputs}
                 className="p-1.5 rounded-md hover:bg-green-50 dark:hover:bg-green-950/30 text-gray-400 hover:text-green-500 transition disabled:opacity-30"
                 disabled={!task.outputImages?.length}

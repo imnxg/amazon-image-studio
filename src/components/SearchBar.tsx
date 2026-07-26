@@ -132,6 +132,7 @@ export default function SearchBar() {
               { label: '全部来源', value: 'all' },
               { label: 'Listing 图', value: 'amazon-listing' },
               { label: 'A+ 图', value: 'amazon-aplus' },
+              { label: '图片编辑', value: 'seedream-edit' },
               { label: '普通生图', value: 'gallery' },
               { label: 'Agent', value: 'agent' },
             ]}

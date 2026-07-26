@@ -1900,7 +1900,6 @@ export default function AmazonPlanner() {
                 {isPreparingReferencePayload ? '正在压缩参考图...' : referencePayloadNotice}
               </div>
             )}
-
             {inputImages.length > 0 ? (
               <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-2 sm:grid-cols-[repeat(auto-fill,72px)]">
                 {inputImages.map((image, index) => (

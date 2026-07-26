@@ -422,6 +422,15 @@ body.drag-selecting * {
     backdrop-filter: blur(32px) saturate(1.28) !important;
     -webkit-backdrop-filter: blur(32px) saturate(1.28) !important;
   }
+
+  .image-editor-canvas-stage {
+    background-color: hsl(var(--muted) / 0.74);
+    background-image:
+      radial-gradient(circle at 50% 10%, hsl(var(--surface) / 0.82), transparent 48%),
+      linear-gradient(hsl(var(--separator) / 0.38) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--separator) / 0.38) 1px, transparent 1px);
+    background-size: auto, 22px 22px, 22px 22px;
+  }
 }
 
 /* Component-level defaults: form controls are filled or grouped, never outlined boxes. */

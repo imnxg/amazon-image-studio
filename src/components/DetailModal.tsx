@@ -13,6 +13,7 @@ import { downloadImageIds } from '../lib/downloadImages'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { getAspectLabel, getTaskHistoryCategory, getWorkflowLabel } from '../lib/taskHistory'
 import { getAmazonMarketplaceLabel } from '../lib/amazonMarketplaces'
+import { getApiProviderLabel } from '../lib/apiProfiles'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
 import { useSheetDrag } from './Sheet'
 
@@ -230,7 +231,7 @@ export default function DetailModal() {
   const taskProvider = task.apiProvider
   const isOpenAiTask = (taskProvider ?? 'openai') === 'openai'
   const showPromptWarning = Boolean(isOpenAiTask && task.apiMode === 'responses' && currentOutputImageId && (!currentRevisedPrompt || showRevisedPrompt) && !hasHandledPromptWarning)
-  const taskProviderName = taskProvider === 'fal' ? 'fal.ai' : taskProvider ? 'OpenAI' : '未知'
+  const taskProviderName = taskProvider ? getApiProviderLabel(settings, taskProvider) : '未知'
   const taskProfileName = task.apiProfileName || '未知'
   const taskModel = task.apiModel || '未知'
   const showSourceInfo = Boolean(task.apiProvider || task.apiProfileName || task.apiModel)
@@ -317,9 +318,10 @@ export default function DetailModal() {
   }
 
   const handleCopyPrompt = async () => {
-    if (!task.prompt) return
+    const promptToCopy = task.imageEditContext?.userInstruction || task.prompt
+    if (!promptToCopy) return
     try {
-      await copyTextToClipboard(task.prompt)
+      await copyTextToClipboard(promptToCopy)
       showToast('提示词已复制', 'success')
     } catch (err) {
       showToast(getClipboardFailureMessage('复制提示词失败', err), 'error')
@@ -792,7 +794,7 @@ export default function DetailModal() {
               </div>
             ) : (
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-4">
-                {task.prompt || '(无提示词)'}
+                {task.imageEditContext?.userInstruction || task.prompt || '(无提示词)'}
               </p>
             )}
             {showRevisedPrompt && currentRevisedPrompt && (
@@ -827,6 +829,16 @@ export default function DetailModal() {
                       {allInputImageIds.map((imgId) => {
                         const isMaskTarget = imgId === maskTargetId
                         const isStyleReference = imgId === styleReferenceImageId
+                        const editContext = task.imageEditContext
+                        const editRole = editContext
+                          ? imgId === editContext.sourceImageId
+                            ? '原图'
+                            : imgId === editContext.visualGuideImageId
+                              ? '定位图'
+                              : editContext.referenceImageIds.includes(imgId)
+                                ? `参考 ${editContext.referenceImageIds.indexOf(imgId) + 1}`
+                                : ''
+                          : ''
                         const displaySrc = (isMaskTarget && maskPreviewSrc) ? maskPreviewSrc : (imageSrcs[imgId] || '')
                         return (
                           <div key={imgId} className="relative group inline-block">
@@ -852,6 +864,11 @@ export default function DetailModal() {
                               {isStyleReference && !isMaskTarget && (
                                 <span className="absolute left-1 top-1 rounded bg-violet-500/90 px-1.5 py-0.5 text-[8px] leading-none text-white font-bold tracking-wider backdrop-blur-sm z-10 pointer-events-none">
                                   STYLE
+                                </span>
+                              )}
+                              {editRole && (
+                                <span className="absolute left-1 top-1 rounded bg-blue-600/90 px-1.5 py-0.5 text-[8px] font-bold leading-none text-white backdrop-blur-sm">
+                                  {editRole}
                                 </span>
                               )}
                             </div>
@@ -897,6 +914,7 @@ export default function DetailModal() {
                   >
                     <option value="amazon-listing">Listing 图</option>
                     <option value="amazon-aplus">A+ 图</option>
+                    <option value="seedream-edit">图片编辑</option>
                     <option value="gallery">普通生图</option>
                     <option value="agent">Agent</option>
                     <option value="unknown">未知来源</option>
@@ -991,7 +1009,7 @@ export default function DetailModal() {
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
               </svg>
-              复用配置
+              {currentHistoryCategory.workflow === 'seedream-edit' ? '返回图片编辑' : '复用配置'}
             </button>
             <button
               onClick={handleEdit}
@@ -999,7 +1017,7 @@ export default function DetailModal() {
               className="col-span-2 sm:flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition text-sm font-medium whitespace-nowrap"
             >
               <EditIcon className="w-4 h-4 flex-shrink-0" />
-              编辑输出
+              在图片编辑中打开
             </button>
             <button
               onClick={handleDelete}

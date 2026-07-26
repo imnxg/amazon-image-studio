@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { initStore } from './store'
 import { useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
 import Header from './components/Header'
 import AmazonPlanner from './components/AmazonPlanner'
+import ImageEditorPage from './components/ImageEditorPage'
 import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
 import InputBar from './components/InputBar'
@@ -17,8 +18,16 @@ import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 
+export type AppView = 'home' | 'editor'
+
+function getAppViewFromHash(): AppView {
+  const route = window.location.hash.replace(/^#\/?/, '')
+  return route === 'editor' || route === 'seedream-pro' ? 'editor' : 'home'
+}
+
 export default function App() {
   const setSettings = useStore((s) => s.setSettings)
+  const [view, setView] = useState<AppView>(getAppViewFromHash)
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
 
@@ -41,6 +50,22 @@ export default function App() {
   }, [setSettings])
 
   useEffect(() => {
+    const syncViewFromLocation = () => {
+      if (window.location.hash.replace(/^#\/?/, '') === 'seedream-pro') {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/editor`)
+      }
+      setView(getAppViewFromHash())
+    }
+    syncViewFromLocation()
+    window.addEventListener('hashchange', syncViewFromLocation)
+    window.addEventListener('popstate', syncViewFromLocation)
+    return () => {
+      window.removeEventListener('hashchange', syncViewFromLocation)
+      window.removeEventListener('popstate', syncViewFromLocation)
+    }
+  }, [])
+
+  useEffect(() => {
     const preventPageImageDrag = (e: DragEvent) => {
       if ((e.target as HTMLElement | null)?.closest('img')) {
         e.preventDefault()
@@ -51,20 +76,37 @@ export default function App() {
     return () => document.removeEventListener('dragstart', preventPageImageDrag)
   }, [])
 
+  const navigate = (nextView: AppView) => {
+    setView(nextView)
+    if (nextView === 'editor') {
+      if (window.location.hash !== '#/editor') window.location.hash = '/editor'
+      return
+    }
+
+    const nextUrl = `${window.location.pathname}${window.location.search}`
+    window.history.pushState(null, '', nextUrl)
+  }
+
   return (
     <>
-      <Header />
-      <main data-home-main data-drag-select-surface className="home-main-with-dock pb-48 lg:pb-10">
-        <div className="safe-area-x max-w-7xl mx-auto lg:!px-6">
-          <AmazonPlanner />
-          <SearchBar />
-          <TaskGrid />
+      <Header activeView={view} onNavigate={navigate} />
+      <main data-home-main data-drag-select-surface className={view === 'home' ? 'home-main-with-dock pb-48 lg:pb-10' : 'pb-10'}>
+        <div className={`safe-area-x mx-auto lg:!px-6 ${view === 'editor' ? 'max-w-[96rem]' : 'max-w-7xl'}`}>
+          {view === 'editor' ? (
+            <ImageEditorPage />
+          ) : (
+            <>
+              <AmazonPlanner />
+              <SearchBar />
+              <TaskGrid />
+            </>
+          )}
         </div>
       </main>
-      <InputBar />
+      {view === 'home' && <InputBar />}
       <DetailModal />
       <Lightbox />
-      <SettingsModal />
+      <SettingsModal scope={view} />
       <ConfirmDialog />
       <Toast />
       <MaskEditorModal />

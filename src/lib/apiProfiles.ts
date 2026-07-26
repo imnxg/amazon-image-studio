@@ -22,15 +22,22 @@ import { readRuntimeEnv } from './runtimeEnv'
 const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) || 'https://api.openai.com/v1'
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
-export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
-export const DEFAULT_CHAT_MODEL = 'gpt-5.5'
+export const DEFAULT_RESPONSES_MODEL = 'gpt-5.6-terra'
+export const DEFAULT_CHAT_MODEL = 'gpt-5.6-terra'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
+export const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+export const DEFAULT_VOLCENGINE_MODEL = 'doubao-seedream-5-0-pro-260628'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_AMAZON_PLANNER_PROFILE_ID = 'default-openai-planner'
 export const DEFAULT_API_TIMEOUT = 600
 
-const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal'])
+const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal', 'volcengine'])
+
+export function isVolcengineSeedreamProModel(model: string): boolean {
+  return /seedream-5-0-pro/i.test(model)
+}
+
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
   generationPath: 'images/generations',
   editPath: 'images/edits',
@@ -340,6 +347,24 @@ export function createDefaultFalProfile(overrides: Partial<ApiProfile> = {}): Ap
   }
 }
 
+export function createDefaultVolcengineProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
+  return {
+    id: `volcengine-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: '新配置',
+    provider: 'volcengine',
+    baseUrl: DEFAULT_VOLCENGINE_BASE_URL,
+    apiKey: '',
+    model: DEFAULT_VOLCENGINE_MODEL,
+    timeout: DEFAULT_API_TIMEOUT,
+    ...overrides,
+    apiMode: 'images',
+    codexCli: false,
+    apiProxy: false,
+    streamImages: false,
+    streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
+  }
+}
+
 export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvider, customProvider?: CustomProviderDefinition): ApiProfile {
   const providerDrafts = {
     ...profile.providerDrafts,
@@ -372,8 +397,24 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     }
   }
 
+  if (provider === 'volcengine') {
+    return {
+      ...profile,
+      provider,
+      baseUrl: savedDraft?.baseUrl ?? DEFAULT_VOLCENGINE_BASE_URL,
+      model: savedDraft?.model ?? DEFAULT_VOLCENGINE_MODEL,
+      apiMode: 'images',
+      codexCli: false,
+      apiProxy: savedDraft?.apiProxy ?? false,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      streamImages: false,
+      streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
+      providerDrafts,
+    }
+  }
+
   if (customProvider) {
-    const shouldUseOpenAIDefaults = profile.provider === 'fal'
+    const shouldUseOpenAIDefaults = profile.provider === 'fal' || profile.provider === 'volcengine'
     return {
       ...profile,
       provider: customProvider.id,
@@ -406,20 +447,32 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
 
 function normalizeProviderDraft(input: unknown, provider: ApiProvider, customProviderIds: Set<string>): ApiProfileProviderDraft {
   if (!isRecord(input)) return undefined
-  const fallback = provider === 'fal' ? createDefaultFalProfile() : createDefaultOpenAIProfile()
+  const fallback = provider === 'fal'
+    ? createDefaultFalProfile()
+    : provider === 'volcengine'
+    ? createDefaultVolcengineProfile()
+    : createDefaultOpenAIProfile()
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl : undefined
   const model = typeof input.model === 'string' && input.model.trim() ? input.model : undefined
-  const apiMode = input.apiMode === 'responses' || input.apiMode === 'chat' ? input.apiMode : input.apiMode === 'images' ? 'images' : undefined
-  const knownProvider = provider === 'fal' || provider === 'openai' || customProviderIds.has(provider)
+  const apiMode = provider === 'volcengine'
+    ? 'images'
+    : input.apiMode === 'responses' || input.apiMode === 'chat'
+    ? input.apiMode
+    : input.apiMode === 'images'
+    ? 'images'
+    : undefined
+  const knownProvider = provider === 'fal' || provider === 'openai' || provider === 'volcengine' || customProviderIds.has(provider)
   if (!knownProvider) return undefined
 
   return {
     baseUrl: provider === 'fal'
       ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
+      : provider === 'volcengine'
+      ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_VOLCENGINE_BASE_URL
       : baseUrl,
     model,
     apiMode,
-    codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
+    codexCli: provider === 'openai' && typeof input.codexCli === 'boolean' ? input.codexCli : false,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
     responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
     streamImages: false,
@@ -571,7 +624,7 @@ export function isOpenRouterImageGenerationProfile(profile: Pick<ApiProfile, 'pr
 }
 
 export function canApiProfileGenerateImages(profile: Pick<ApiProfile, 'provider' | 'baseUrl' | 'apiMode'>): boolean {
-  return profile.apiMode === 'images' || isOpenRouterImageGenerationProfile(profile)
+  return profile.provider === 'volcengine' || profile.apiMode === 'images' || isOpenRouterImageGenerationProfile(profile)
 }
 
 function resolveAmazonPlannerProfileId(profiles: ApiProfile[], value: unknown): string {
@@ -579,6 +632,29 @@ function resolveAmazonPlannerProfileId(profiles: ApiProfile[], value: unknown): 
   const requestedProfile = requestedId ? profiles.find((profile) => profile.id === requestedId) : undefined
   if (requestedProfile && isAmazonPlannerProfile(requestedProfile)) return requestedProfile.id
   return profiles.find(isAmazonPlannerProfile)?.id ?? ''
+}
+
+function resolveSeedreamEditorProfileId(profiles: ApiProfile[], value: unknown): string {
+  const requestedId = typeof value === 'string' ? value : ''
+  const requestedProfile = requestedId ? profiles.find((profile) => profile.id === requestedId) : undefined
+  if (requestedProfile?.provider === 'volcengine') return requestedProfile.id
+  return profiles.find((profile) => profile.provider === 'volcengine' && isVolcengineSeedreamProModel(profile.model))?.id
+    ?? profiles.find((profile) => profile.provider === 'volcengine')?.id
+    ?? ''
+}
+
+function ensureHomeApiProfile(profiles: ApiProfile[], requestedId: string): { profiles: ApiProfile[]; activeProfileId: string } {
+  const requested = profiles.find((profile) => profile.id === requestedId)
+  if (requested && requested.provider !== 'volcengine' && canApiProfileGenerateImages(requested)) {
+    return { profiles, activeProfileId: requested.id }
+  }
+
+  const fallback = profiles.find((profile) => profile.provider !== 'volcengine' && canApiProfileGenerateImages(profile))
+  if (fallback) return { profiles, activeProfileId: fallback.id }
+
+  const usedIds = new Set(profiles.map((profile) => profile.id))
+  const fallbackProfile = createDefaultImageProfile({ id: getSingleConnectionProfileId(usedIds) })
+  return { profiles: [fallbackProfile, ...profiles], activeProfileId: fallbackProfile.id }
 }
 
 function normalizeApiSetupMode(input: Record<string, unknown>): ApiSetupMode {
@@ -591,12 +667,13 @@ function normalizeApiSetupMode(input: Record<string, unknown>): ApiSetupMode {
 function isSingleConnectionPlannerMetaProfile(
   apiSetupMode: ApiSetupMode,
   amazonPlannerProfileId: string,
+  activeProfileId: string,
   profile: ApiProfile,
 ): boolean {
   return apiSetupMode === 'single-connection' &&
     profile.id === amazonPlannerProfileId &&
-    isAmazonPlannerProfile(profile) &&
-    !canApiProfileGenerateImages(profile)
+    profile.id !== activeProfileId &&
+    isAmazonPlannerProfile(profile)
 }
 
 function getSingleConnectionProfileId(usedIds: Set<string>): string {
@@ -609,6 +686,50 @@ function getSingleConnectionProfileId(usedIds: Set<string>): string {
     id = `single-connection-openai-${index}`
   }
   return id
+}
+
+function getSeparatePlannerProfileId(usedIds: Set<string>): string {
+  if (!usedIds.has(DEFAULT_AMAZON_PLANNER_PROFILE_ID)) return DEFAULT_AMAZON_PLANNER_PROFILE_ID
+
+  let index = 2
+  let id = `amazon-planner-${index}`
+  while (usedIds.has(id)) {
+    index += 1
+    id = `amazon-planner-${index}`
+  }
+  return id
+}
+
+function splitSharedImageAndPlannerProfile(
+  profiles: ApiProfile[],
+  activeProfileId: string,
+  amazonPlannerProfileId: string,
+): { profiles: ApiProfile[]; amazonPlannerProfileId: string } {
+  if (!amazonPlannerProfileId || amazonPlannerProfileId !== activeProfileId) {
+    return { profiles, amazonPlannerProfileId }
+  }
+
+  const sharedProfile = profiles.find((profile) => profile.id === amazonPlannerProfileId)
+  if (!sharedProfile || !isAmazonPlannerProfile(sharedProfile) || !canApiProfileGenerateImages(sharedProfile)) {
+    return { profiles, amazonPlannerProfileId }
+  }
+
+  const plannerProfile = createDefaultAmazonPlannerProfile({
+    id: getSeparatePlannerProfileId(new Set(profiles.map((profile) => profile.id))),
+    name: `${sharedProfile.name} · 策划`,
+    baseUrl: sharedProfile.baseUrl,
+    apiKey: sharedProfile.apiKey,
+    model: sharedProfile.model,
+    timeout: sharedProfile.timeout,
+    apiMode: sharedProfile.apiMode,
+    codexCli: sharedProfile.codexCli,
+    apiProxy: sharedProfile.apiProxy,
+  })
+
+  return {
+    profiles: [...profiles, plannerProfile],
+    amazonPlannerProfileId: plannerProfile.id,
+  }
 }
 
 function createDefaultProfilePair(overrides: Partial<ApiProfile> = {}): ApiProfile[] {
@@ -696,9 +817,17 @@ function normalizeDefaultProfileSet(
 export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfile>, customProviderIds = new Set<string>()): ApiProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
-  const provider: ApiProvider = rawProvider === 'fal' || customProviderIds.has(rawProvider) ? rawProvider : 'openai'
-  const defaults = provider === 'fal' ? createDefaultFalProfile(fallback) : createDefaultOpenAIProfile(fallback)
-  const apiMode: ApiMode = record.apiMode === 'responses' || record.apiMode === 'chat' ? record.apiMode : 'images'
+  const provider: ApiProvider = rawProvider === 'fal' || rawProvider === 'volcengine' || customProviderIds.has(rawProvider) ? rawProvider : 'openai'
+  const defaults = provider === 'fal'
+    ? createDefaultFalProfile(fallback)
+    : provider === 'volcengine'
+    ? createDefaultVolcengineProfile(fallback)
+    : createDefaultOpenAIProfile(fallback)
+  const apiMode: ApiMode = provider === 'volcengine'
+    ? 'images'
+    : record.apiMode === 'responses' || record.apiMode === 'chat'
+    ? record.apiMode
+    : 'images'
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
 
   return {
@@ -706,12 +835,16 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
     provider,
-    baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL : rawBaseUrl,
+    baseUrl: provider === 'fal'
+      ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
+      : provider === 'volcengine'
+      ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_VOLCENGINE_BASE_URL
+      : rawBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
-    codexCli: Boolean(record.codexCli),
+    codexCli: provider === 'openai' ? Boolean(record.codexCli) : false,
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
     streamImages: false,
@@ -763,10 +896,17 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown, options
   let activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
-  const amazonPlannerProfileId = resolveAmazonPlannerProfileId(profiles, record.amazonPlannerProfileId)
+  const homeProfile = ensureHomeApiProfile(profiles, activeProfileId)
+  profiles = homeProfile.profiles
+  activeProfileId = homeProfile.activeProfileId
+  const seedreamEditorProfileId = resolveSeedreamEditorProfileId(profiles, record.seedreamEditorProfileId)
+  let amazonPlannerProfileId = resolveAmazonPlannerProfileId(profiles, record.amazonPlannerProfileId)
   const apiSetupMode = normalizeApiSetupMode(record)
+  const separatedPlanner = splitSharedImageAndPlannerProfile(profiles, activeProfileId, amazonPlannerProfileId)
+  profiles = separatedPlanner.profiles
+  amazonPlannerProfileId = separatedPlanner.amazonPlannerProfileId
   if (apiSetupMode === 'single-connection') {
-    let visibleProfiles = profiles.filter((profile) => !isSingleConnectionPlannerMetaProfile(apiSetupMode, amazonPlannerProfileId, profile))
+    let visibleProfiles = profiles.filter((profile) => !isSingleConnectionPlannerMetaProfile(apiSetupMode, amazonPlannerProfileId, activeProfileId, profile))
     if (visibleProfiles.length === 0) {
       const usedIds = new Set(profiles.map((profile) => profile.id))
       const connectionProfile = createDefaultImageProfile({
@@ -804,6 +944,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown, options
     agentWebSearch: typeof record.agentWebSearch === 'boolean' ? record.agentWebSearch : false,
     profiles,
     activeProfileId,
+    seedreamEditorProfileId,
     amazonPlannerProfileId,
     apiSetupMode,
     customStyleReferences: normalizeCustomStyleReferences(record.customStyleReferences),
@@ -817,6 +958,7 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
   if (provider === 'fal') return 'fal.ai'
+  if (provider === 'volcengine') return '火山方舟 Seedream'
   if (provider === 'openai') return 'OpenAI'
   return getCustomProviderDefinition(settings, provider)?.name ?? provider
 }
@@ -826,12 +968,70 @@ export function getVisibleApiProfiles(settings: Partial<AppSettings> | unknown):
   if (normalized.apiSetupMode !== 'single-connection') return normalized.profiles
 
   return normalized.profiles.filter((profile) =>
-    !isSingleConnectionPlannerMetaProfile(normalized.apiSetupMode, normalized.amazonPlannerProfileId, profile),
+    !isSingleConnectionPlannerMetaProfile(normalized.apiSetupMode, normalized.amazonPlannerProfileId, normalized.activeProfileId, profile),
   )
 }
 
 export function isOpenAICompatibleProvider(settings: Partial<AppSettings> | unknown, provider: ApiProvider): boolean {
   return provider === 'openai' || Boolean(getCustomProviderDefinition(settings, provider))
+}
+
+export function getImageGenerationProfiles(settings: Partial<AppSettings> | unknown): ApiProfile[] {
+  return getVisibleApiProfiles(settings).filter((profile) =>
+    profile.provider !== 'volcengine' && canApiProfileGenerateImages(profile),
+  )
+}
+
+export function getAmazonPlannerProfiles(settings: Partial<AppSettings> | unknown): ApiProfile[] {
+  const normalized = normalizeSettings(settings)
+  return normalized.profiles.filter((profile) =>
+    profile.id !== normalized.activeProfileId && isAmazonPlannerProfile(profile),
+  )
+}
+
+export function getHomeApiProfiles(settings: Partial<AppSettings> | unknown): ApiProfile[] {
+  return getImageGenerationProfiles(settings)
+}
+
+export function getHomeApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile {
+  const normalized = normalizeSettings(settings)
+  const profiles = getHomeApiProfiles(normalized)
+  return profiles.find((profile) => profile.id === normalized.activeProfileId)
+    ?? profiles[0]
+    ?? createDefaultImageProfile()
+}
+
+/** 构造一次请求专用的配置快照；不会改变持久化的首页活动配置。 */
+export function createApiProfileRequestSettings(settings: Partial<AppSettings> | unknown, profileOrId: string | ApiProfile): AppSettings | null {
+  const normalized = normalizeSettings(settings)
+  const profile = typeof profileOrId === 'string'
+    ? normalized.profiles.find((item) => item.id === profileOrId)
+    : profileOrId
+  if (!profile) return null
+  return {
+    ...normalized,
+    baseUrl: profile.baseUrl,
+    apiKey: profile.apiKey,
+    model: profile.model,
+    timeout: profile.timeout,
+    apiMode: profile.apiMode,
+    codexCli: profile.codexCli,
+    apiProxy: profile.apiProxy,
+    profiles: normalized.profiles.some((item) => item.id === profile.id)
+      ? normalized.profiles.map((item) => item.id === profile.id ? profile : item)
+      : [...normalized.profiles, profile],
+    activeProfileId: profile.id,
+  }
+}
+
+export function getSeedreamEditorProfiles(settings: Partial<AppSettings> | unknown): ApiProfile[] {
+  return normalizeSettings(settings).profiles.filter((profile) => profile.provider === 'volcengine')
+}
+
+export function getSeedreamEditorProfile(settings: Partial<AppSettings> | unknown): ApiProfile | null {
+  const normalized = normalizeSettings(settings)
+  const profiles = getSeedreamEditorProfiles(normalized)
+  return profiles.find((profile) => profile.id === normalized.seedreamEditorProfileId) ?? profiles[0] ?? null
 }
 
 export interface ImportedProviderSettings {
@@ -897,7 +1097,8 @@ export function importCustomProviderDefinitionFromJson(jsonText: string, existin
 export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile {
   const record = settings && typeof settings === 'object' ? settings as Record<string, unknown> : {}
   const normalized = normalizeSettings(settings)
-  const profile = normalized.profiles.find((p) => p.id === normalized.activeProfileId) ?? normalized.profiles[0] ?? createDefaultOpenAIProfile()
+  const requestedProfileId = typeof record.activeProfileId === 'string' ? record.activeProfileId : normalized.activeProfileId
+  const profile = normalized.profiles.find((p) => p.id === requestedProfileId) ?? normalized.profiles[0] ?? createDefaultOpenAIProfile()
 
   return {
     ...profile,
@@ -981,6 +1182,7 @@ function hasOnlyDefaultProfiles(settings: AppSettings): boolean {
     settings.customStyleReferences.length === 0 &&
     settings.profiles.length === 2 &&
     settings.activeProfileId === DEFAULT_OPENAI_PROFILE_ID &&
+    settings.seedreamEditorProfileId === '' &&
     settings.amazonPlannerProfileId === DEFAULT_AMAZON_PLANNER_PROFILE_ID &&
     settings.apiSetupMode === 'standard' &&
     settings.profiles.some(isDefaultOpenAIProfile) &&
@@ -1116,6 +1318,13 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
       id: createImportedProfileId(profile.provider, usedIds),
     }))
   const profiles = [...current.profiles, ...importedProfiles]
+  const importedEditorProfile = imported.profiles.find((profile) => profile.id === imported.seedreamEditorProfileId)
+  const mergedEditorProfile = importedEditorProfile
+    ? profiles.find((profile) => getApiProfileDedupKey(profile) === getApiProfileDedupKey(importedEditorProfile))
+    : null
+  const seedreamEditorProfileId = current.profiles.some((profile) => profile.provider === 'volcengine')
+    ? current.seedreamEditorProfileId
+    : mergedEditorProfile?.id ?? ''
 
   return normalizeSettings({
     ...current,
@@ -1123,6 +1332,7 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
     customStyleReferences,
     profiles,
     activeProfileId: current.activeProfileId,
+    seedreamEditorProfileId,
   })
 }
 
@@ -1149,6 +1359,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   customStyleReferences: [],
   profiles: createDefaultProfilePair(),
   activeProfileId: DEFAULT_OPENAI_PROFILE_ID,
+  seedreamEditorProfileId: '',
   amazonPlannerProfileId: DEFAULT_AMAZON_PLANNER_PROFILE_ID,
   apiSetupMode: 'standard',
 })

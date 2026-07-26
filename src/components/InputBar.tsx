@@ -2,8 +2,8 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { getActiveApiProfile, normalizeSettings } from '../lib/apiProfiles'
-import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
+import { createApiProfileRequestSettings, getAmazonPlannerProfile, getHomeApiProfile } from '../lib/apiProfiles'
+import { DEFAULT_FAL_IMAGE_SIZE, DEFAULT_VOLCENGINE_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
@@ -584,21 +584,24 @@ export default function InputBar() {
   const dragCounter = useRef(0)
   const isMobile = useIsMobile()
 
-  const currentActiveProfile = useMemo(() => getActiveApiProfile(settings), [settings])
+  const currentHomeProfile = useMemo(() => getHomeApiProfile(settings), [settings])
+  const currentPlannerProfile = useMemo(() => getAmazonPlannerProfile(settings), [settings])
+  const currentActiveProfile = appMode === 'agent' && currentPlannerProfile
+    ? currentPlannerProfile
+    : currentHomeProfile
   const activeProfile = useMemo(() => (
-    settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
-      ? settings.profiles.find((profile) => profile.id === reusedTaskApiProfileId) ?? currentActiveProfile
+    appMode !== 'agent' && settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
+      ? settings.profiles.find((profile) => profile.id === reusedTaskApiProfileId && profile.provider !== 'volcengine') ?? currentActiveProfile
       : currentActiveProfile
-  ), [currentActiveProfile, reusedTaskApiProfileId, settings])
+  ), [appMode, currentActiveProfile, reusedTaskApiProfileId, settings])
   const activeAgentConversation = appMode === 'agent'
     ? agentConversations.find((conversation) => conversation.id === activeAgentConversationId) ?? null
     : null
   const activeAgentIsRunning = Boolean(activeAgentConversation?.rounds.some((round) => round.status === 'running'))
-  const effectiveSettings = useMemo(() => (
-    activeProfile.id === currentActiveProfile.id
-      ? settings
-      : normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
-  ), [activeProfile.id, currentActiveProfile.id, settings])
+  const effectiveSettings = useMemo(
+    () => createApiProfileRequestSettings(settings, activeProfile) ?? settings,
+    [activeProfile, settings],
+  )
   const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
   const submitButtonAriaLabel = activeAgentIsRunning
@@ -629,11 +632,14 @@ export default function InputBar() {
   }, [setPrompt])
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
+  const isVolcengineProvider = activeProvider === 'volcengine'
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
-  const moderationDisabled = isFalProvider
-  const compressionDisabled = params.output_format === 'png' || isFalProvider
+  const moderationDisabled = isFalProvider || isVolcengineProvider
+  const qualityDisabled = settings.codexCli || isVolcengineProvider
+  const compressionDisabled = params.output_format === 'png' || isFalProvider || isVolcengineProvider
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
+  const isVolcengineAutoSize = isVolcengineProvider && params.size === 'auto'
   const nDraftValue = Number(nInput)
   const effectiveNValue = Number.isNaN(nDraftValue) ? params.n : nDraftValue
   const streamConcurrentByN = false
@@ -641,8 +647,12 @@ export default function InputBar() {
     ? 'Agent 模式下数量由模型根据提示词自动决定'
     : isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
+    : isVolcengineProvider
+    ? `火山方舟最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
-  const displaySize = isFalTextToImage && params.size === 'auto'
+  const displaySize = isVolcengineAutoSize
+    ? DEFAULT_VOLCENGINE_IMAGE_SIZE
+    : isFalTextToImage && params.size === 'auto'
     ? DEFAULT_FAL_IMAGE_SIZE
     : normalizeImageSize(params.size) || DEFAULT_PARAMS.size
 
@@ -662,8 +672,8 @@ export default function InputBar() {
   const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加` : '上传图片'
   const compressionHint = useHintTooltip({ enabled: () => compressionDisabled })
   const moderationHint = useHintTooltip({ enabled: () => moderationDisabled })
-  const sizeHint = useHintTooltip({ enabled: () => isFalTextToImage })
-  const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider })
+  const sizeHint = useHintTooltip({ enabled: () => isFalTextToImage || isVolcengineAutoSize })
+  const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider || isVolcengineProvider })
   const nLimitHint = useHintTooltip({ autoHideMs: 2000 })
   const maskTargetImage = maskDraft
     ? inputImages.find((img) => img.id === maskDraft.targetImageId) ?? null
@@ -1803,8 +1813,12 @@ export default function InputBar() {
           {displaySize}
         </button>
         <ButtonTooltip
-          visible={isFalTextToImage && sizeHint.visible}
-          text={<>fal.ai 的文生图模式不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 参数</>}
+          visible={(isFalTextToImage || isVolcengineAutoSize) && sizeHint.visible}
+          text={
+            isVolcengineAutoSize
+              ? <>火山方舟 Seedream 会将 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 尺寸规范为 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">{DEFAULT_VOLCENGINE_IMAGE_SIZE}</code></>
+              : <>fal.ai 的文生图模式不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 参数</>
+          }
         />
       </label>
       <label
@@ -1818,19 +1832,25 @@ export default function InputBar() {
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
         <Select
-          value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
+          value={qualityDisabled ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
           onChange={(val) => {
-            if (!settings.codexCli) setParams({ quality: val as any })
+            if (!qualityDisabled) setParams({ quality: val as any })
           }}
           options={qualityOptions}
-          disabled={settings.codexCli}
-          className={settings.codexCli
+          disabled={qualityDisabled}
+          className={qualityDisabled
             ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
             : selectClass}
         />
         <ButtonTooltip
-          visible={(settings.codexCli || isFalProvider) && qualityHint.visible}
-          text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
+          visible={(qualityDisabled || isFalProvider) && qualityHint.visible}
+          text={
+            isVolcengineProvider
+              ? '火山方舟 Seedream 不支持质量参数'
+              : isFalProvider
+              ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</>
+              : 'Codex CLI 不支持质量参数'
+          }
         />
       </label>
       <label className="flex flex-col gap-0.5">
@@ -1873,7 +1893,7 @@ export default function InputBar() {
         />
         <ButtonTooltip
           visible={compressionHint.visible}
-          text={isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
+          text={isVolcengineProvider ? '火山方舟 Seedream 不支持压缩率参数' : isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
         />
       </label>
       <label
@@ -1902,7 +1922,7 @@ export default function InputBar() {
         />
         <ButtonTooltip
           visible={moderationDisabled && moderationHint.visible}
-          text="fal.ai 不支持审核参数"
+          text={isVolcengineProvider ? '火山方舟 Seedream 不支持审核参数' : 'fal.ai 不支持审核参数'}
         />
       </label>
       <label
@@ -1990,7 +2010,7 @@ export default function InputBar() {
 
       {showSizePicker && (
         <SizePickerModal
-          currentSize={isFalTextToImage && params.size === 'auto' ? DEFAULT_FAL_IMAGE_SIZE : params.size}
+          currentSize={isVolcengineAutoSize ? DEFAULT_VOLCENGINE_IMAGE_SIZE : isFalTextToImage && params.size === 'auto' ? DEFAULT_FAL_IMAGE_SIZE : params.size}
           onSelect={(size) => setParams({ size })}
           onClose={() => setShowSizePicker(false)}
           allowAuto={!isFalTextToImage}
@@ -2101,7 +2121,6 @@ export default function InputBar() {
               renderImageThumbs()
             )
           )}
-
           {/* 输入框 */}
           <div className="relative grid lg:min-h-0 lg:flex-1">
             {showAtImageMenu && (

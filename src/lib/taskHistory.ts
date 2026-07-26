@@ -145,6 +145,8 @@ export function getWorkflowLabel(workflow: TaskWorkflow) {
       return 'Listing 图'
     case 'amazon-aplus':
       return 'A+ 图'
+    case 'seedream-edit':
+      return '图片编辑'
     case 'agent':
       return 'Agent'
     case 'gallery':
@@ -214,6 +216,7 @@ export function matchesTaskHistoryFilters(task: TaskRecord, filters: TaskHistory
 
   const searchable = [
     task.prompt,
+    task.imageEditContext?.userInstruction ?? '',
     JSON.stringify(task.params),
     JSON.stringify(task.actualParams ?? {}),
     category.productTitle,

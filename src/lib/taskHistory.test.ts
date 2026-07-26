@@ -4,6 +4,7 @@ import {
   UNCATEGORIZED_PRODUCT_FILTER,
   getTaskHistoryCategory,
   getTaskProductFilterOptions,
+  getWorkflowLabel,
   matchesTaskHistoryFilters,
 } from './taskHistory'
 
@@ -62,6 +63,30 @@ describe('task history categories', () => {
       marketplaceId: 'us',
       aspect: 'landscape',
     })
+  })
+
+  it('labels and filters dedicated image editor tasks', () => {
+    const record = task({
+      prompt: 'generated role prompt',
+      category: { workflow: 'seedream-edit' },
+      imageEditContext: {
+        sourceImageId: 'source',
+        visualGuideImageId: 'guide',
+        referenceImageIds: ['reference'],
+        userInstruction: '删除蓝色箭头指向的标签',
+      },
+    })
+
+    expect(getTaskHistoryCategory(record).workflow).toBe('seedream-edit')
+    expect(getWorkflowLabel('seedream-edit')).toBe('图片编辑')
+    expect(matchesTaskHistoryFilters(record, {
+      searchQuery: '蓝色箭头',
+      filterStatus: 'all',
+      filterFavorite: false,
+      filterProductTitle: '',
+      filterWorkflow: 'seedream-edit',
+      filterAspect: 'all',
+    })).toBe(true)
   })
 
   it('preserves explicit Amazon marketplace metadata', () => {

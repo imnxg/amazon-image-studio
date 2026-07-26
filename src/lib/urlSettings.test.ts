@@ -70,7 +70,7 @@ describe('URL settings params', () => {
     })
   })
 
-  it('creates Chat Completions profile from URL params', () => {
+  it('imports a Chat Completions URL into the planner role', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({
       ...current,
@@ -78,11 +78,43 @@ describe('URL settings params', () => {
     })
 
     expect(next.profiles.find((profile) => profile.id === next.activeProfileId)).toMatchObject({
+      apiMode: 'images',
+    })
+    expect(getAmazonPlannerProfile(next)).toMatchObject({
       provider: 'openai',
       baseUrl: 'https://api.deepseek.com',
       apiKey: 'deepseek-key',
       model: DEFAULT_CHAT_MODEL,
       apiMode: 'chat',
+    })
+  })
+
+  it('imports a text profile from a settings payload into the planner role', () => {
+    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const params = new URLSearchParams()
+    params.set('settings', JSON.stringify({
+      profiles: [createDefaultOpenAIProfile({
+        id: 'imported-planner',
+        name: 'Imported Planner',
+        baseUrl: 'https://planner.example.com/v1',
+        apiKey: 'planner-key',
+        apiMode: 'responses',
+        model: 'planner-model',
+      })],
+    }))
+
+    const next = normalizeSettings({
+      ...current,
+      ...buildSettingsFromUrlParams(current, params),
+    })
+
+    expect(next.activeProfileId).toBe(current.activeProfileId)
+    expect(getAmazonPlannerProfile(next)).toMatchObject({
+      id: 'imported-planner',
+      baseUrl: 'https://planner.example.com/v1',
+      apiKey: 'planner-key',
+      apiMode: 'responses',
+      model: 'planner-model',
     })
   })
 

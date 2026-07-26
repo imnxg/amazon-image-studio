@@ -3,6 +3,7 @@ import { normalizeBaseUrl } from './devProxy'
 import {
   DEFAULT_AMAZON_PLANNER_PROFILE_ID,
   DEFAULT_CHAT_MODEL,
+  canApiProfileGenerateImages,
   createDefaultAmazonPlannerProfile,
   createDefaultOpenAIProfile,
   DEFAULT_IMAGES_MODEL,
@@ -93,7 +94,7 @@ function activateFirstImportedProfile(settings: AppSettings, importedSettings: u
   const activeProfile = findEquivalentApiProfile(settings, importedProfile, imported.customProviders)
 
   return activeProfile
-    ? normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
+    ? selectUrlProfileForItsRole(settings, activeProfile)
     : settings
 }
 
@@ -116,6 +117,17 @@ function ensureUrlPlannerProfile(settings: AppSettings, patch: Partial<AppSettin
     ...settings,
     profiles: [...settings.profiles, plannerProfile],
     amazonPlannerProfileId: plannerProfile.id,
+  })
+}
+
+function selectUrlProfileForItsRole(settings: AppSettings, profile: AppSettings['profiles'][number]): AppSettings {
+  const canGenerateImages = canApiProfileGenerateImages(profile)
+  const canPlan = profile.provider === 'openai' && (profile.apiMode === 'responses' || profile.apiMode === 'chat')
+
+  return normalizeSettings({
+    ...settings,
+    ...(canGenerateImages ? { activeProfileId: profile.id } : {}),
+    ...(canPlan ? { amazonPlannerProfileId: profile.id } : {}),
   })
 }
 
@@ -181,14 +193,14 @@ export function buildSettingsFromUrlParams(currentSettings: Partial<AppSettings>
     if (codexCliParam !== null) profile.codexCli = codexCliParam.trim().toLowerCase() === 'true'
     const existingProfile = settings.profiles.find((item) => getProfileDedupKey(item) === getProfileDedupKey(profile))
     if (existingProfile) {
-      return applySetupModeParams(normalizeSettings({ ...settings, activeProfileId: existingProfile.id }))
+      return applySetupModeParams(selectUrlProfileForItsRole(settings, existingProfile))
     }
 
-    return applySetupModeParams(normalizeSettings({
+    const withProfile = normalizeSettings({
       ...settings,
       profiles: [...settings.profiles, profile],
-      activeProfileId: profile.id,
-    }))
+    })
+    return applySetupModeParams(selectUrlProfileForItsRole(withProfile, profile))
   }
 
   if (importedSettings == null && !hasSetupModeParams) return {}

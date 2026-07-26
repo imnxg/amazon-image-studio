@@ -12,12 +12,19 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+type AppView = 'home' | 'editor'
+
+type HeaderProps = {
+  activeView: AppView
+  onNavigate: (view: AppView) => void
+}
+
 function isInstalledPwa() {
   const nav = window.navigator as Navigator & { standalone?: boolean }
   return window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true
 }
 
-export default function Header() {
+export default function Header({ activeView, onNavigate }: HeaderProps) {
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const [showHelp, setShowHelp] = useState(false)
@@ -88,13 +95,42 @@ export default function Header() {
   return (
     <>
       <header data-no-drag-select className="safe-area-top fixed left-0 right-0 top-0 z-40 border-b border-black/[0.06] bg-white/75 shadow-[0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-gray-950/80 dark:shadow-none">
-        <div className="safe-area-x safe-header-inner mx-auto flex max-w-7xl items-center justify-between">
-          <h1 className="min-w-0 pr-3">
-            <span className="text-[17px] font-semibold tracking-[-0.025em] text-gray-900 dark:text-gray-100 sm:text-lg">
-              亚马逊图片工作台
-            </span>
-          </h1>
+        <div className="safe-area-x safe-header-inner mx-auto flex max-w-7xl items-center justify-between gap-2 sm:gap-3">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+            <h1 className="hidden min-w-0 min-[520px]:block">
+              <button
+                type="button"
+                onClick={() => onNavigate('home')}
+                className="truncate text-[17px] font-semibold tracking-[-0.025em] text-gray-900 transition-colors hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 sm:text-lg"
+              >
+                亚马逊图片工作台
+              </button>
+            </h1>
+            <nav className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onNavigate('home')}
+                className={`h-8 rounded-[10px] px-2.5 text-xs font-semibold transition sm:px-3 ${activeView === 'home' ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900' : 'text-gray-500 hover:bg-black/[0.05] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100'}`}
+              >
+                首页
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('editor')}
+                className={`h-8 rounded-[10px] px-2.5 text-xs font-semibold transition sm:px-3 ${activeView === 'editor' ? 'bg-[hsl(var(--primary))] text-white shadow-sm' : 'text-gray-500 hover:bg-black/[0.05] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100'}`}
+              >
+                图片编辑
+              </button>
+            </nav>
+          </div>
           <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowSettings(true, 'about')}
+              className="h-8 whitespace-nowrap rounded-[10px] px-2 text-[11px] font-semibold text-[hsl(var(--primary))] transition hover:bg-[hsl(var(--ios-blue-tint))] active:translate-y-px sm:px-2.5 sm:text-xs"
+            >
+              开源声明
+            </button>
             {!isPwaInstalled && (
               <div
                 className="relative"

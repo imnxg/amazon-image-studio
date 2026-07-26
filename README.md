@@ -8,12 +8,21 @@
 
 ## 开源说明
 
+> [!IMPORTANT]
+> **开源与第三方收费说明**
+>
+> 亚马逊图片工作台是免费开源软件，请以本项目的 [GitHub 仓库](https://github.com/Ali-Aria/amazon-image-studio) 作为官方核验入口。本项目采用 MIT License，允许商业使用、分发和售卖软件副本，但必须保留版权与许可声明。
+>
+> 第三方收取的费用只代表其自行提供的部署、定制、培训或技术支持，不代表购买了本软件、获得独家授权，也不代表 Ali-Aria 官方服务。请警惕“官方付费版”“独家授权版”“买断后永久官方更新”等误导性表述。
+>
+> 如发现冒充官方、删除署名或隐瞒开源来源的售卖行为，请通过 [GitHub Issues](https://github.com/Ali-Aria/amazon-image-studio/issues) 反馈。
+
 本仓库公开的是前端应用源码、Amazon 图片策划逻辑、Prompt 模板、知识文档、本地启动脚本和部署配置，采用 [MIT License](LICENSE) 发布。
 
 需要注意：
 
 - Codex / Claude Code / OpenClaw 只是可选的安装助手，不是项目运行依赖；不用 AI 编程工具也可以按下面的手动方式本地运行。
-- 在线体验和本地应用都不会内置 API Key。生成图片和 AI 策划需要使用者填写自己的 OpenAI 或兼容接口 Key，并自行承担调用费用。
+- 在线体验和本地应用都不会内置 API Key。生成图片和 AI 策划需要使用者填写自己的 OpenAI、火山方舟或兼容接口 Key，并自行承担调用费用。
 - `package.json` 中的 `"private": true` 仅用于防止误发布到 npm，不代表 GitHub 仓库私有，也不影响源码开源。
 
 ## 更新日志
@@ -123,7 +132,7 @@
 - 支持 2K / 4K 输出；Listing 图默认方图，A+ 图按模块比例生成高清图，并显示 Seller Central 上传建议尺寸。
 - 最终生图提示词会自动写入当前期望输出分辨率，让提示词和尺寸参数保持一致。
 - A+ 小方块模块支持单独输出标题/正文文案，和图片内文字分开，避免把长文案画进 220x220 图片里。
-- 支持 OpenAI / OpenAI 兼容图片接口、独立 AI 策划 Chat Completions / Responses API 配置，也支持反代或 OpenRouter 单连接模式复用同一套 URL/Key。
+- 支持 OpenAI / OpenAI 兼容图片接口、火山方舟 Seedream 图片生成、独立 AI 策划 Chat Completions / Responses API 配置，也支持反代或 OpenRouter 单连接模式复用同一套 URL/Key。
 - 历史记录支持按商品、来源、形状筛选；从历史记录复用或编辑 Listing / A+ 图片时，新任务会继承原商品分类。
 - 保留原项目的参考图、遮罩编辑、历史记录、批量下载、本地 IndexedDB 存储等能力。
 
@@ -249,12 +258,14 @@ stop-amazon-image-studio.bat
 
 生图配置用于真正生成图片。
 
-- 服务商：OpenAI 或 OpenAI 兼容接口
+- 服务商：OpenAI 兼容接口、fal.ai 或火山方舟 Seedream
 - API 接口：`Images API (/v1/images)`
 - 模型：`gpt-image-2`
 - API Key：填写你自己的 Key
 
 OpenRouter 生图模型不提供 OpenAI `/images/generations` 路径，应用会自动把 `https://openrouter.ai/api/v1` 的生图请求转到 `/chat/completions` 并发送 `modalities`。OpenRouter 示例：API URL 填 `https://openrouter.ai/api/v1`，模型填支持图片输出的模型，例如 `google/gemini-2.5-flash-image`；API 接口选择 `Images API` 或 `Chat Completions` 都可以。遮罩编辑仍需使用支持 `/images/edits` 的接口。
+
+火山方舟 Seedream 示例：服务商选择“火山方舟 Seedream”，API URL 保持默认 `https://ark.cn-beijing.volces.com/api/v3`，API Key 填 Ark Key，模型默认 `doubao-seedream-5-0-pro-260628`。该接入只用于 Seedream 图片生成；Pro 模型会按官方示例使用 `image` 字段、`2K/4K` 尺寸和单图生成处理；如手动改用 Lite 模型 `doubao-seedream-5-0-260128`，参考图会以 JSON `image_urls` 发送，输出格式仅发送 PNG/JPEG。不使用遮罩编辑、AI 策划、视频、流式输出或联网搜索。如果界面参数选择 WebP，提交前会自动按 JPEG 处理。Pro 模型建议保持“返回 Base64 图片数据”关闭；当火山图片 URL 不允许浏览器跨域下载时，本地开发服务和 Docker/Nginx 部署会通过同源 `/image-proxy/` 自动下载。
 
 流式传输功能已移除。部分反代或网关在流式生图时会返回 `upstream did not return image output` 等错误，当前版本所有生图请求都会按非流式方式发送；旧分享链接中的 `streamImages` / `streamPartialImages` 参数会被忽略。
 
@@ -392,6 +403,8 @@ dist/
 ## 静态部署
 
 本项目是 Vite 单页应用，部署平台只需要安装依赖、运行构建命令，并把 `dist/` 作为静态目录发布。
+
+如果使用仓库的 Docker/Nginx 部署并需要同源 API 代理，可设置 `ENABLE_API_PROXY=true` 和 `API_PROXY_URL`。OpenAI 官方通常使用 `API_PROXY_URL=https://api.openai.com/v1`；火山方舟 Seedream 使用 `API_PROXY_URL=https://ark.cn-beijing.volces.com/api/v3`，前端会请求同源 `/api-proxy/images/generations` 并由 Nginx 转发到 Ark `/api/v3/images/generations`。Docker/Nginx 还内置 `/image-proxy/`，用于下载火山返回但未开放 CORS 的图片 URL。
 
 推荐配置：
 
