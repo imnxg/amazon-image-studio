@@ -6,6 +6,7 @@ import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigration
 import Header from './components/Header'
 import AmazonPlanner from './components/AmazonPlanner'
 import ImageEditorPage from './components/ImageEditorPage'
+import SyntheticPerformerTaggerPage from './components/SyntheticPerformerTaggerPage'
 import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
 import InputBar from './components/InputBar'
@@ -18,11 +19,13 @@ import MaskEditorModal from './components/MaskEditorModal'
 import ImageContextMenu from './components/ImageContextMenu'
 import { useGlobalClickSuppression } from './lib/clickSuppression'
 
-export type AppView = 'home' | 'editor'
+export type AppView = 'home' | 'editor' | 'tagger'
 
 function getAppViewFromHash(): AppView {
   const route = window.location.hash.replace(/^#\/?/, '')
-  return route === 'editor' || route === 'seedream-pro' ? 'editor' : 'home'
+  if (route === 'editor' || route === 'seedream-pro') return 'editor'
+  if (route === 'tagger') return 'tagger'
+  return 'home'
 }
 
 export default function App() {
@@ -78,8 +81,9 @@ export default function App() {
 
   const navigate = (nextView: AppView) => {
     setView(nextView)
-    if (nextView === 'editor') {
-      if (window.location.hash !== '#/editor') window.location.hash = '/editor'
+    if (nextView === 'editor' || nextView === 'tagger') {
+      const hash = `#/${nextView}`
+      if (window.location.hash !== hash) window.location.hash = `/${nextView}`
       return
     }
 
@@ -94,6 +98,8 @@ export default function App() {
         <div className={`safe-area-x mx-auto lg:!px-6 ${view === 'editor' ? 'max-w-[96rem]' : 'max-w-7xl'}`}>
           {view === 'editor' ? (
             <ImageEditorPage />
+          ) : view === 'tagger' ? (
+            <SyntheticPerformerTaggerPage />
           ) : (
             <>
               <AmazonPlanner />
@@ -106,7 +112,7 @@ export default function App() {
       {view === 'home' && <InputBar />}
       <DetailModal />
       <Lightbox />
-      <SettingsModal scope={view} />
+      <SettingsModal scope={view === 'editor' ? 'editor' : 'home'} />
       <ConfirmDialog />
       <Toast />
       <MaskEditorModal />

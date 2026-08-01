@@ -242,6 +242,15 @@ export function WrenchIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function TagIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.59 13.41 13.41 20.59a2 2 0 0 1-2.82 0L3.41 13.41a2 2 0 0 1 0-2.82L10.59 3.4A2 2 0 0 1 12 2.82h7.17a2 2 0 0 1 2 2V12a2 2 0 0 1-.58 1.41Z" />
+      <circle cx="16.5" cy="7.5" r="1.25" strokeWidth={1.75} />
+    </svg>
+  )
+}
+
 export function UndoIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>

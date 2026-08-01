@@ -53,6 +53,7 @@ const ADD_CUSTOM_PROVIDER_VALUE = '__add_custom_provider__'
 const COPY_IMPORT_URL_OPTIONS_STORAGE_KEY = 'gpt-image-playground.copy-import-url-options'
 const LEGACY_DEFAULT_CHAT_MODEL = 'deepseek-v4-flash'
 const DEEPSEEK_PLANNER_NOTICE = '当前 AI 策划配置为 DeepSeek 官方接口。DeepSeek 策划阶段不会读取参考图，系统会仅用 Listing 文本和你填写的商品信息生成策划；参考图仍会在正式生图时随生图请求发送。请把产品颜色、形状、结构、配件、Logo、套装数量等关键特征写进 Listing 或商品信息中。'
+const WECHAT_OFFICIAL_ACCOUNT_NAME = '阿梨Aria早鸟报'
 
 const DEFAULT_COPY_IMPORT_URL_OPTIONS = {
   includeApiKey: false,
@@ -673,6 +674,15 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
     }
   }
 
+  const copyWechatOfficialAccountName = async () => {
+    try {
+      await copyTextToClipboard(WECHAT_OFFICIAL_ACCOUNT_NAME)
+      showToast('公众号名称已复制', 'success')
+    } catch (err) {
+      showToast(getClipboardFailureMessage('复制公众号名称失败', err), 'error')
+    }
+  }
+
   const confirmCopyProfileImportUrl = (profile: ApiProfile) => {
     setCopyImportUrlProfile(profile)
     setCopyImportUrlOptions(readCopyImportUrlOptions())
@@ -1187,7 +1197,15 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
           </span>
           <span>
             不会配置？微信搜索公众号
-            <strong className="mx-1 font-semibold text-[hsl(var(--primary))]">阿梨Aria早鸟报</strong>
+            <button
+              type="button"
+              onClick={() => void copyWechatOfficialAccountName()}
+              className="mx-1 rounded-sm font-semibold text-[hsl(var(--primary))] underline decoration-transparent underline-offset-2 transition hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--ios-blue-tint))]"
+              aria-label={`复制公众号名称：${WECHAT_OFFICIAL_ACCOUNT_NAME}`}
+              title="点击复制公众号名称"
+            >
+              {WECHAT_OFFICIAL_ACCOUNT_NAME}
+            </button>
             查看配置教程。
           </span>
         </div>

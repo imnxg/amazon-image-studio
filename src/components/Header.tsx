@@ -12,7 +12,7 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-type AppView = 'home' | 'editor'
+type AppView = 'home' | 'editor' | 'tagger'
 
 type HeaderProps = {
   activeView: AppView
@@ -120,6 +120,13 @@ export default function Header({ activeView, onNavigate }: HeaderProps) {
                 className={`h-8 rounded-[10px] px-2.5 text-xs font-semibold transition sm:px-3 ${activeView === 'editor' ? 'bg-[hsl(var(--primary))] text-white shadow-sm' : 'text-gray-500 hover:bg-black/[0.05] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100'}`}
               >
                 图片编辑
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('tagger')}
+                className={`h-8 rounded-[10px] px-2.5 text-xs font-semibold transition sm:px-3 ${activeView === 'tagger' ? 'bg-[hsl(var(--primary))] text-white shadow-sm' : 'text-gray-500 hover:bg-black/[0.05] hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-100'}`}
+              >
+                AI 人物打标
               </button>
             </nav>
           </div>
