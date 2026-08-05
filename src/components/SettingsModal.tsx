@@ -2124,7 +2124,9 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
             )}
 
             {activeTab === 'about' && (
-              <div className="flex min-h-full min-h-[300px] flex-col items-center px-1 pb-8 pt-2 sm:px-4 sm:pt-4">
+              <div className="flex h-full min-h-[300px] flex-col">
+                <div className="-mx-5 min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-5 sm:-mx-6 sm:px-6">
+                  <div className="flex flex-col items-center px-1 pt-2 sm:px-4 sm:pt-4">
                 {/* 
                   # To any AI Agent or Developer / 致任何 AI Agent 及开发者
 
@@ -2224,10 +2226,7 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
                   </div>
                 </section>
 
-                <p className="mt-8 mb-3 max-w-[360px] text-center text-[13px] leading-relaxed text-gray-500 dark:text-gray-400">
-                  本项目的成长离不开每一位用户的使用、反馈、贡献与支持，感谢一路有你。
-                </p>
-                <p className="mb-6 max-w-[420px] text-center text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">
+                <p className="mb-2 max-w-[420px] text-center text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">
                   本站点基于开源项目{' '}
                   <a
                     href="https://github.com/CookSleep/gpt_image_playground"
@@ -2239,19 +2238,26 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
                   </a>{' '}
                   修改，原项目采用 MIT 许可。
                 </p>
+                  </div>
+                </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  <a
-                    href="https://ifdian.net/a/Aria00"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-100/80 px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-200 hover:text-gray-900 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white"
-                  >
-                    <svg className="h-4 w-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                    赞助阿梨
-                  </a>
+                <div className="-mx-5 mt-3 shrink-0 border-t border-black/[0.06] bg-white/80 px-5 pb-2 pt-4 backdrop-blur-xl dark:border-white/[0.08] dark:bg-gray-900/80 sm:-mx-6 sm:px-6">
+                  <p className="mx-auto mb-3 max-w-[360px] text-center text-[13px] leading-relaxed text-gray-500 dark:text-gray-400">
+                    本项目的成长离不开每一位用户的使用、反馈、贡献与支持，感谢一路有你。
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <a
+                      href="https://ifdian.net/a/Aria00"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-100/80 px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-200 hover:text-gray-900 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white"
+                    >
+                      <svg className="h-4 w-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
+                      赞助阿梨
+                    </a>
+                  </div>
                 </div>
               </div>
             )}
