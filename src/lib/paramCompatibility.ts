@@ -1,5 +1,6 @@
 import { DEFAULT_OUTPUT_COMPRESSION, DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
-import { getActiveApiProfile, isVolcengineSeedreamProModel } from './apiProfiles'
+import { getActiveApiProfile, isAliyunQwenImageProfile, isVolcengineSeedreamProModel } from './apiProfiles'
+import { normalizeAliyunQwenImageSize } from './aliyunQwenImageApi'
 import { normalizeImageSize } from './size'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -8,6 +9,9 @@ export const MAX_FAL_OUTPUT_IMAGES = 4
 export const MAX_VOLCENGINE_OUTPUT_IMAGES = 14
 export const MAX_VOLCENGINE_PRO_OUTPUT_IMAGES = 1
 export const MAX_OPENAI_OUTPUT_IMAGES = 10
+export const MAX_ALIYUN_QWEN_OUTPUT_IMAGES = 6
+export const MAX_DEFAULT_INPUT_IMAGES = 16
+export const MAX_ALIYUN_QWEN_INPUT_IMAGES = 3
 
 export function getOutputImageLimitForSettings(settings: AppSettings) {
   const activeProfile = getActiveApiProfile(settings)
@@ -18,7 +22,14 @@ export function getOutputImageLimitForSettings(settings: AppSettings) {
       ? MAX_VOLCENGINE_PRO_OUTPUT_IMAGES
       : MAX_VOLCENGINE_OUTPUT_IMAGES
   }
+  if (isAliyunQwenImageProfile(activeProfile)) return MAX_ALIYUN_QWEN_OUTPUT_IMAGES
   return MAX_OPENAI_OUTPUT_IMAGES
+}
+
+export function getInputImageLimitForSettings(settings: AppSettings) {
+  return isAliyunQwenImageProfile(getActiveApiProfile(settings))
+    ? MAX_ALIYUN_QWEN_INPUT_IMAGES
+    : MAX_DEFAULT_INPUT_IMAGES
 }
 
 export function normalizeParamsForSettings(
@@ -48,6 +59,15 @@ export function normalizeParamsForSettings(
   if (activeProfile.provider === 'volcengine') {
     if (nextParams.size === 'auto') nextParams.size = DEFAULT_VOLCENGINE_IMAGE_SIZE
     nextParams.output_format = nextParams.output_format === 'png' ? 'png' : 'jpeg'
+    nextParams.quality = DEFAULT_PARAMS.quality
+    nextParams.moderation = DEFAULT_PARAMS.moderation
+    nextParams.output_compression = null
+  }
+
+  if (isAliyunQwenImageProfile(activeProfile)) {
+    const qwenSize = normalizeAliyunQwenImageSize(nextParams.size)
+    nextParams.size = qwenSize === 'auto' ? 'auto' : qwenSize.replace('*', 'x')
+    nextParams.output_format = 'png'
     nextParams.quality = DEFAULT_PARAMS.quality
     nextParams.moderation = DEFAULT_PARAMS.moderation
     nextParams.output_compression = null

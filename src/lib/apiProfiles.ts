@@ -28,6 +28,13 @@ export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 export const DEFAULT_VOLCENGINE_MODEL = 'doubao-seedream-5-0-pro-260628'
+/**
+ * Qwen-Image uses Alibaba Cloud's native multimodal-generation endpoint rather
+ * than the OpenAI Images API. It intentionally remains an internal detector so
+ * the existing provider selector does not need another visible option.
+ */
+export const DEFAULT_ALIYUN_QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1'
+export const DEFAULT_ALIYUN_QWEN_MODEL = 'qwen-image-3.0-pro'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_AMAZON_PLANNER_PROFILE_ID = 'default-openai-planner'
 export const DEFAULT_API_TIMEOUT = 600
@@ -36,6 +43,51 @@ const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal', 'volcengine
 
 export function isVolcengineSeedreamProModel(model: string): boolean {
   return /seedream-5-0-pro/i.test(model)
+}
+
+function toProfileUrl(value: string): URL | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const input = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`
+
+  try {
+    return new URL(input)
+  } catch {
+    return null
+  }
+}
+
+/** Recognizes DashScope and the Beijing/Singapore workspace endpoints. */
+export function isAliyunApiBaseUrl(value: string): boolean {
+  const url = toProfileUrl(value)
+  if (!url) return false
+
+  const hostname = url.hostname.toLowerCase()
+  return hostname === 'dashscope.aliyuncs.com' ||
+    hostname === 'dashscope-intl.aliyuncs.com' ||
+    hostname === 'dashscope.aliyun.com' ||
+    hostname === 'dashscope-intl.aliyun.com' ||
+    hostname.endsWith('.maas.aliyuncs.com') ||
+    hostname.endsWith('.maas.aliyun.com')
+}
+
+export function getAliyunQwenImageModel(model: string): string {
+  const trimmed = model.trim()
+  return /^qwen-image(?:-|$)/i.test(trimmed) ? trimmed : DEFAULT_ALIYUN_QWEN_MODEL
+}
+
+/**
+ * The UI still stores this connection as an OpenAI-compatible profile. The
+ * native adapter is selected only for image-generation profiles whose URL is
+ * an Alibaba DashScope/MaaS endpoint.
+ */
+export function isAliyunQwenImageProfile(profile: Pick<ApiProfile, 'provider' | 'baseUrl'> & Partial<Pick<ApiProfile, 'apiMode'>>): boolean {
+  return profile.provider === 'openai' &&
+    (profile.apiMode === undefined || profile.apiMode === 'images') &&
+    isAliyunApiBaseUrl(profile.baseUrl)
 }
 
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
@@ -829,19 +881,24 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     ? record.apiMode
     : 'images'
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
+  const normalizedBaseUrl = provider === 'fal'
+    ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
+    : provider === 'volcengine'
+    ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_VOLCENGINE_BASE_URL
+    : rawBaseUrl
+  const rawModel = typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model
+  const normalizedModel = isAliyunQwenImageProfile({ provider, baseUrl: normalizedBaseUrl, apiMode })
+    ? getAliyunQwenImageModel(rawModel)
+    : rawModel
 
   return {
     ...defaults,
     id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
     provider,
-    baseUrl: provider === 'fal'
-      ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
-      : provider === 'volcengine'
-      ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_VOLCENGINE_BASE_URL
-      : rawBaseUrl,
+    baseUrl: normalizedBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
+    model: normalizedModel,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
     codexCli: provider === 'openai' ? Boolean(record.codexCli) : false,
@@ -871,12 +928,18 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown, options
   const splitDefaultProfiles = options.splitDefaultProfiles ?? true
   const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
   const customProviderIds = new Set(customProviders.map((provider) => provider.id))
+  const legacyBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL
+  const legacyApiMode: ApiMode = record.apiMode === 'responses' || record.apiMode === 'chat' ? record.apiMode : 'images'
+  const legacyRawModel = typeof record.model === 'string' && record.model.trim() ? record.model : DEFAULT_IMAGES_MODEL
+  const legacyModel = isAliyunQwenImageProfile({ provider: 'openai', baseUrl: legacyBaseUrl, apiMode: legacyApiMode })
+    ? getAliyunQwenImageModel(legacyRawModel)
+    : legacyRawModel
   const legacyProfile = createDefaultOpenAIProfile({
-    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
+    baseUrl: legacyBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : DEFAULT_IMAGES_MODEL,
+    model: legacyModel,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
-    apiMode: record.apiMode === 'responses' || record.apiMode === 'chat' ? record.apiMode : 'images',
+    apiMode: legacyApiMode,
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,

@@ -23,9 +23,11 @@ import {
   getAmazonPlannerProfiles,
   getApiProviderLabel,
   getActiveApiProfile,
+  getAliyunQwenImageModel,
   getImageGenerationProfiles,
   importCustomProviderSettingsFromJson,
   isAmazonPlannerProfile,
+  isAliyunQwenImageProfile,
   isOfficialDeepSeekPlannerProfile,
   isOpenRouterImageGenerationProfile,
   isOpenAICompatibleProvider,
@@ -420,9 +422,10 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
   const seedreamProfiles = draft.profiles.filter((profile) => profile.provider === 'volcengine')
   const seedreamEditorProfile = seedreamProfiles.find((profile) => profile.id === draft.seedreamEditorProfileId) ?? seedreamProfiles[0] ?? null
   const activeProviderIsVolcengine = activeProfile.provider === 'volcengine'
+  const activeProviderIsAliyunQwen = isAliyunQwenImageProfile(activeProfile)
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
-  const activeProviderSupportsApiProxy = activeProfile.provider === 'openai' || activeProviderIsVolcengine
-  const activeProviderSupportsBase64Response = activeProviderIsOpenAICompatible || activeProviderIsVolcengine
+  const activeProviderSupportsApiProxy = (activeProfile.provider === 'openai' && !activeProviderIsAliyunQwen) || activeProviderIsVolcengine
+  const activeProviderSupportsBase64Response = (activeProviderIsOpenAICompatible && !activeProviderIsAliyunQwen) || activeProviderIsVolcengine
   const activeProviderSupportsTimeout = activeProviderIsOpenAICompatible || activeProviderIsVolcengine
   const apiProxyChecked = activeProviderSupportsApiProxy && (apiProxyLocked || activeProfile.apiProxy)
   const apiProxyEnabled = apiProxyAvailable && activeProviderSupportsApiProxy && apiProxyChecked
@@ -514,7 +517,7 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
       ...displaySettings,
       profiles: displaySettings.profiles.map((profile) => ({
         ...profile,
-        apiProxy: (profile.provider === 'openai' || profile.provider === 'volcengine') && apiProxyAvailable
+        apiProxy: ((profile.provider === 'openai' && !isAliyunQwenImageProfile(profile)) || profile.provider === 'volcengine') && apiProxyAvailable
           ? (apiProxyLocked || profile.apiProxy)
           : false,
       })),
@@ -564,14 +567,21 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
         : profile.provider === 'volcengine'
         ? DEFAULT_VOLCENGINE_MODEL
         : getDefaultModelForMode(profile.apiMode)
+      const rawModel = profile.model.trim()
+      const isAliyunQwenProfile = isAliyunQwenImageProfile({
+        ...profile,
+        baseUrl: normalizedBaseUrl,
+      })
       return {
         ...profile,
         name: profile.name.trim() || (profile.id === DEFAULT_OPENAI_PROFILE_ID ? '默认' : '新配置'),
         baseUrl: normalizedBaseUrl,
-        model: profile.model.trim() || defaultModel,
+        model: isAliyunQwenProfile && (!rawModel || rawModel === DEFAULT_IMAGES_MODEL)
+          ? getAliyunQwenImageModel(rawModel)
+          : rawModel || defaultModel,
         timeout: Number(profile.timeout) || DEFAULT_SETTINGS.timeout,
         apiMode: profile.provider === 'volcengine' ? 'images' : profile.apiMode,
-        apiProxy: (profile.provider === 'openai' || profile.provider === 'volcengine') && apiProxyAvailable ? (apiProxyLocked || profile.apiProxy) : false,
+        apiProxy: (((profile.provider === 'openai' && !isAliyunQwenImageProfile(profile)) || profile.provider === 'volcengine') && apiProxyAvailable) ? (apiProxyLocked || profile.apiProxy) : false,
         codexCli: profile.provider === 'openai' ? profile.codexCli : false,
         streamImages: false,
         streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,

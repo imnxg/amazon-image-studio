@@ -30,6 +30,17 @@
 按自然周（周一至周日）整理，最新一周在最上方。每个周块可展开查看本周推送内容，提交号用于回溯具体改动。
 
 <details open>
+<summary><strong>2026-08-03 至 2026-08-09</strong> - 阿里云百炼 Qwen-Image 3.0 Pro 接入</summary>
+
+- 生图配置无需新增服务商选项：在“OpenAI 兼容接口”中填写 DashScope/MaaS API URL（例如 `https://dashscope.aliyuncs.com/api/v1` 或业务空间专属域名）和 API Key，应用会自动识别阿里云地址并切换到百炼原生多模态生图协议。
+- 模型留空或仍为默认 `gpt-image-2` 时自动使用 `qwen-image-3.0-pro`，也可显式填写；请求隐式开启 `prompt_extend: true`，输出固定为 PNG。
+- 原生接口支持 1–6 张结果和最多 3 张参考图，不支持遮罩编辑；界面会按接口能力隐藏质量、压缩率、审核参数，并在亚马逊工作台与上传入口按 3 张参考图上限校验。
+- 百炼返回的临时图片 URL 有效期约 24 小时，应用会立即下载并保存到本地；开发服务、Docker 与 Nginx 的图片代理白名单同步加入 `aliyuncs.com` / `aliyun.com`，跨域图片可正常下载。
+- 提交：随本次 `main` 推送发布。
+
+</details>
+
+<details open>
 <summary><strong>2026-07-27 至 2026-08-02</strong> - AI 人物媒体 XMP 打标</summary>
 
 - 新增独立“AI 人物打标”工作区，在浏览器本地为 JPG/JPEG、PNG、WebP、MP4、MOV 写入 Amazon 要求的 `contains-synthetic-performer` XMP 标记，支持单文件下载或多文件 ZIP。
@@ -46,8 +57,6 @@
 - 新增独立“图片编辑”工作区，支持从本地图片或历史结果开始编辑，添加参考图、绘制框选/箭头/涂画等视觉标注，并使用 Seedream 5.0 Pro 执行添加、删除、替换、改色、换材质和草图渲染。
 - 设置页新增独立 Seedream 图片编辑配置，不改变首页图片生成连接；编辑结果可以继续设为主图并迭代处理。
 - 顶部新增“开源声明”常驻入口；关于页和 README 增加开源与第三方收费说明、官方仓库核验入口及 Issues 举报入口，不改变 MIT License 的商业使用授权。
-- 关于页使用 Ali-Aria 头像替换默认 GitHub 图标。
-- 设置页的公众号名称“阿梨Aria早鸟报”支持点击或键盘复制，并在复制成功后显示提示。
 - 版本号由 `0.1.0` 提升至 `0.2.0`。
 - 提交：`edf05e8`、`68408bb`、`0cba8d8`、`465a1ff`、`868f9e5`。
 
@@ -304,6 +313,8 @@ stop-amazon-image-studio.bat
 OpenRouter 生图模型不提供 OpenAI `/images/generations` 路径，应用会自动把 `https://openrouter.ai/api/v1` 的生图请求转到 `/chat/completions` 并发送 `modalities`。OpenRouter 示例：API URL 填 `https://openrouter.ai/api/v1`，模型填支持图片输出的模型，例如 `google/gemini-2.5-flash-image`；API 接口选择 `Images API` 或 `Chat Completions` 都可以。遮罩编辑仍需使用支持 `/images/edits` 的接口。
 
 火山方舟 Seedream 示例：服务商选择“火山方舟 Seedream”，API URL 保持默认 `https://ark.cn-beijing.volces.com/api/v3`，API Key 填 Ark Key，模型默认 `doubao-seedream-5-0-pro-260628`。该接入只用于 Seedream 图片生成；Pro 模型会按官方示例使用 `image` 字段、`2K/4K` 尺寸和单图生成处理；如手动改用 Lite 模型 `doubao-seedream-5-0-260128`，参考图会以 JSON `image_urls` 发送，输出格式仅发送 PNG/JPEG。不使用遮罩编辑、AI 策划、视频、流式输出或联网搜索。如果界面参数选择 WebP，提交前会自动按 JPEG 处理。Pro 模型建议保持“返回 Base64 图片数据”关闭；当火山图片 URL 不允许浏览器跨域下载时，本地开发服务和 Docker/Nginx 部署会通过同源 `/image-proxy/` 自动下载。
+
+阿里云百炼 Qwen-Image 3.0 Pro 不需要新增服务商选项：在现有“OpenAI 兼容接口”配置中填写 DashScope/MaaS API URL（例如 `https://dashscope.aliyuncs.com/api/v1` 或业务空间专属域名）、API Key 后，应用会自动识别阿里云地址并切换到百炼原生多模态生图协议。模型留空或仍为默认的 `gpt-image-2` 时，会自动使用 `qwen-image-3.0-pro`；也可以显式填写该模型。请求会隐式开启 `prompt_extend: true`，输出固定为 PNG，支持 1–6 张结果和最多 3 张参考图；原生接口不支持遮罩编辑。百炼返回的临时图片 URL 有效期约 24 小时，应用会立即下载并保存到本地；如遇跨域，开发服务和 Docker/Nginx 会通过同源 `/image-proxy/` 下载。
 
 流式传输功能已移除。部分反代或网关在流式生图时会返回 `upstream did not return image output` 等错误，当前版本所有生图请求都会按非流式方式发送；旧分享链接中的 `streamImages` / `streamPartialImages` 参数会被忽略。
 

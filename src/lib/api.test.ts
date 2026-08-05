@@ -768,4 +768,44 @@ describe('callImageApi', () => {
       images: ['data:image/jpeg;base64,aW1hZ2U='],
     })
   })
+
+  it('automatically routes Alibaba image profiles to the native Qwen adapter', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output: {
+        choices: [{
+          message: { content: [{ image: 'data:image/png;base64,aW1hZ2U=' }] },
+        }],
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      apiKey: 'dashscope-key',
+      baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+      model: 'qwen-image-3.0-pro',
+      profiles: DEFAULT_SETTINGS.profiles.map((profile) => profile.id === DEFAULT_SETTINGS.activeProfileId
+        ? {
+            ...profile,
+            apiKey: 'dashscope-key',
+            baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+            model: 'qwen-image-3.0-pro',
+          }
+        : profile),
+    }
+
+    const result = await callImageApi({
+      settings,
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation')
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.parameters.prompt_extend).toBe(true)
+    expect(result.images).toEqual(['data:image/png;base64,aW1hZ2U='])
+  })
 })

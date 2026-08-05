@@ -2,8 +2,8 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS } from '../types'
-import { createApiProfileRequestSettings, getAmazonPlannerProfile, getHomeApiProfile } from '../lib/apiProfiles'
-import { DEFAULT_FAL_IMAGE_SIZE, DEFAULT_VOLCENGINE_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
+import { createApiProfileRequestSettings, getAmazonPlannerProfile, getHomeApiProfile, isAliyunQwenImageProfile } from '../lib/apiProfiles'
+import { DEFAULT_FAL_IMAGE_SIZE, DEFAULT_VOLCENGINE_IMAGE_SIZE, getChangedParams, getInputImageLimitForSettings, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
@@ -335,8 +335,6 @@ function ButtonTooltip({ visible, text }: { visible: boolean; text: ReactNode })
   )
 }
 
-/** API 支持的最大参考图数量 */
-const API_MAX_IMAGES = 16
 const DESKTOP_DOCK_MIN_WIDTH = 1024
 const DESKTOP_DOCK_BOTTOM_CLEARANCE = 32
 const AT_IMAGE_MENU_WIDTH = 256
@@ -633,11 +631,13 @@ export default function InputBar() {
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const isVolcengineProvider = activeProvider === 'volcengine'
+  const isAliyunQwenProvider = isAliyunQwenImageProfile(activeProfile)
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
-  const moderationDisabled = isFalProvider || isVolcengineProvider
-  const qualityDisabled = settings.codexCli || isVolcengineProvider
-  const compressionDisabled = params.output_format === 'png' || isFalProvider || isVolcengineProvider
+  const moderationDisabled = isFalProvider || isVolcengineProvider || isAliyunQwenProvider
+  const qualityDisabled = settings.codexCli || isVolcengineProvider || isAliyunQwenProvider
+  const compressionDisabled = params.output_format === 'png' || isFalProvider || isVolcengineProvider || isAliyunQwenProvider
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
+  const inputImageLimit = getInputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const isVolcengineAutoSize = isVolcengineProvider && params.size === 'auto'
   const nDraftValue = Number(nInput)
@@ -649,6 +649,8 @@ export default function InputBar() {
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : isVolcengineProvider
     ? `火山方舟最大请求数量为 ${outputImageLimit}`
+    : isAliyunQwenProvider
+    ? `当前图片接口最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
   const displaySize = isVolcengineAutoSize
     ? DEFAULT_VOLCENGINE_IMAGE_SIZE
@@ -668,12 +670,12 @@ export default function InputBar() {
         { label: 'medium', value: 'medium' },
         { label: 'high', value: 'high' },
       ]
-  const atImageLimit = inputImages.length >= API_MAX_IMAGES
-  const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加` : '上传图片'
+  const atImageLimit = inputImages.length >= inputImageLimit
+  const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${inputImageLimit} 张），无法继续添加` : '上传图片'
   const compressionHint = useHintTooltip({ enabled: () => compressionDisabled })
   const moderationHint = useHintTooltip({ enabled: () => moderationDisabled })
   const sizeHint = useHintTooltip({ enabled: () => isFalTextToImage || isVolcengineAutoSize })
-  const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider || isVolcengineProvider })
+  const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider || isVolcengineProvider || isAliyunQwenProvider })
   const nLimitHint = useHintTooltip({ autoHideMs: 2000 })
   const maskTargetImage = maskDraft
     ? inputImages.find((img) => img.id === maskDraft.targetImageId) ?? null
@@ -967,15 +969,15 @@ export default function InputBar() {
   const handleFiles = async (files: FileList | File[]) => {
     try {
       const currentCount = useStore.getState().inputImages.length
-      if (currentCount >= API_MAX_IMAGES) {
+      if (currentCount >= inputImageLimit) {
         useStore.getState().showToast(
-          `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加`,
+          `参考图数量已达上限（${inputImageLimit} 张），无法继续添加`,
           'error',
         )
         return
       }
 
-      const remaining = API_MAX_IMAGES - currentCount
+      const remaining = inputImageLimit - currentCount
       const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
       const toAdd = accepted.slice(0, remaining)
       const discarded = accepted.length - toAdd.length
@@ -986,7 +988,7 @@ export default function InputBar() {
 
       if (discarded > 0) {
         useStore.getState().showToast(
-          `已达上限 ${API_MAX_IMAGES} 张，${discarded} 张图片被丢弃`,
+          `已达上限 ${inputImageLimit} 张，${discarded} 张图片被丢弃`,
           'error',
         )
       }
@@ -1847,6 +1849,8 @@ export default function InputBar() {
           text={
             isVolcengineProvider
               ? '火山方舟 Seedream 不支持质量参数'
+              : isAliyunQwenProvider
+              ? '当前图片接口不支持质量参数'
               : isFalProvider
               ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</>
               : 'Codex CLI 不支持质量参数'
@@ -1893,7 +1897,7 @@ export default function InputBar() {
         />
         <ButtonTooltip
           visible={compressionHint.visible}
-          text={isVolcengineProvider ? '火山方舟 Seedream 不支持压缩率参数' : isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
+          text={isVolcengineProvider ? '火山方舟 Seedream 不支持压缩率参数' : isAliyunQwenProvider ? '当前图片接口固定输出 PNG' : isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
         />
       </label>
       <label
@@ -1922,7 +1926,7 @@ export default function InputBar() {
         />
         <ButtonTooltip
           visible={moderationDisabled && moderationHint.visible}
-          text={isVolcengineProvider ? '火山方舟 Seedream 不支持审核参数' : 'fal.ai 不支持审核参数'}
+          text={isVolcengineProvider ? '火山方舟 Seedream 不支持审核参数' : isAliyunQwenProvider ? '当前图片接口不支持审核参数' : 'fal.ai 不支持审核参数'}
         />
       </label>
       <label
@@ -1994,7 +1998,7 @@ export default function InputBar() {
             <div className="text-center">
               {atImageLimit ? (
                 <>
-                  <p className="text-lg font-semibold text-red-500">已达上限 {API_MAX_IMAGES} 张</p>
+                  <p className="text-lg font-semibold text-red-500">已达上限 {inputImageLimit} 张</p>
                   <p className="text-sm text-gray-400 mt-1">请先移除部分参考图后再添加</p>
                 </>
               ) : (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { addImageFromFile, ensureImageCached, submitTask, useStore } from '../store'
-import { getAmazonPlannerProfile, isOfficialDeepSeekPlannerProfile, validateApiProfile } from '../lib/apiProfiles'
+import { getAmazonPlannerProfile, getHomeApiProfile, isAliyunQwenImageProfile, isOfficialDeepSeekPlannerProfile, validateApiProfile } from '../lib/apiProfiles'
+import { getInputImageLimitForSettings } from '../lib/paramCompatibility'
 import {
   DEFAULT_AMAZON_PROMPT_DRAFT,
   type AmazonPromptDraft,
@@ -73,7 +74,6 @@ const LABEL_CLASS = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-[
 const PLAN_LIST_CLASS = 'grid max-h-[420px] gap-2 overflow-y-auto overscroll-contain pr-1 custom-scrollbar sm:max-h-[480px]'
 const GUIDE_HINT_CLASS = 'mb-3 rounded-[var(--ios-radius-md)] bg-[hsl(var(--ios-blue-tint))] px-3 py-2 text-xs font-medium leading-relaxed text-[hsl(var(--primary))]'
 const DEEPSEEK_PLANNER_NOTICE = '当前 AI 策划配置为 DeepSeek 官方接口。DeepSeek 策划阶段不会读取参考图，系统会仅用 Listing 文本和你填写的商品信息生成策划；参考图仍会在正式生图时随生图请求发送。请把产品颜色、形状、结构、配件、Logo、套装数量等关键特征写进 Listing 或商品信息中。'
-const API_MAX_IMAGES = 16
 const STYLE_PREVIEW_WIDTH = 420
 const STYLE_PREVIEW_HEIGHT = 500
 const STYLE_PREVIEW_OFFSET = 16
@@ -370,6 +370,9 @@ export default function AmazonPlanner() {
   const prompt = useStore((s) => s.prompt)
   const inputImages = useStore((s) => s.inputImages)
   const settings = useStore((s) => s.settings)
+  const homeProfile = getHomeApiProfile(settings)
+  const isAliyunQwenProvider = isAliyunQwenImageProfile(homeProfile)
+  const inputImageLimit = getInputImageLimitForSettings(settings)
   const setSettings = useStore((s) => s.setSettings)
   const setPrompt = useStore((s) => s.setPrompt)
   const setParams = useStore((s) => s.setParams)
@@ -454,7 +457,7 @@ export default function AmazonPlanner() {
   const hasStyleReference = Boolean(selectedStyleImage?.imageId)
   const usesStyleReferenceForActivePlan = styleReferenceRequired && hasStyleReference
   const effectiveReferenceCount = inputImages.length + (usesStyleReferenceForActivePlan && selectedStyleImage?.imageId && !inputImages.some((image) => image.id === selectedStyleImage.imageId) ? 1 : 0)
-  const styleReferenceLimitExceeded = usesStyleReferenceForActivePlan && effectiveReferenceCount > API_MAX_IMAGES
+  const styleReferenceLimitExceeded = usesStyleReferenceForActivePlan && effectiveReferenceCount > inputImageLimit
   const activePrompt = plannerMode === 'aplus'
     ? selectedAPlusPlan ? buildAmazonAPlusPlanPrompt({
       ...selectedAPlusPlan,
@@ -585,7 +588,7 @@ export default function AmazonPlanner() {
   const checks = plannerMode === 'aplus'
     ? getAmazonAPlusComplianceChecks(draft, selectedAPlusPlan, aPlusType, marketplaceId, inputImages.length, hasStyleReference)
     : getAmazonListingPlannerChecks(draft, targetSize, marketplaceId, inputImages.length, hasStyleReference, styleReferenceRequired)
-  const atImageLimit = inputImages.length >= API_MAX_IMAGES
+  const atImageLimit = inputImages.length >= inputImageLimit
 
   useEffect(() => {
     let cancelled = false
@@ -729,7 +732,7 @@ export default function AmazonPlanner() {
       return false
     }
     if (shouldRequireStyle && styleReferenceLimitExceeded) {
-      showToast(`已选择隐藏风格参考板，实际参考图数量不能超过 ${API_MAX_IMAGES} 张；请删除一张产品参考图后再提交。`, 'error')
+      showToast(`已选择隐藏风格参考板，实际参考图数量不能超过 ${inputImageLimit} 张；请删除一张产品参考图后再提交。`, 'error')
       return false
     }
 
@@ -1517,12 +1520,12 @@ export default function AmazonPlanner() {
     }
 
     const currentCount = useStore.getState().inputImages.length
-    if (currentCount >= API_MAX_IMAGES) {
-      showToast(`参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加`, 'error')
+    if (currentCount >= inputImageLimit) {
+      showToast(`参考图数量已达上限（${inputImageLimit} 张），无法继续添加`, 'error')
       return
     }
 
-    const remaining = API_MAX_IMAGES - currentCount
+    const remaining = inputImageLimit - currentCount
     const toAdd = accepted.slice(0, remaining)
     const discarded = accepted.length - toAdd.length
 
@@ -1538,8 +1541,8 @@ export default function AmazonPlanner() {
       if (discarded > 0) {
         showToast(
           added > 0
-            ? `已上传 ${added} 张参考图，已达上限 ${API_MAX_IMAGES} 张，${discarded} 张被丢弃`
-            : `已达上限 ${API_MAX_IMAGES} 张，${discarded} 张图片被丢弃`,
+            ? `已上传 ${added} 张参考图，已达上限 ${inputImageLimit} 张，${discarded} 张被丢弃`
+            : `已达上限 ${inputImageLimit} 张，${discarded} 张图片被丢弃`,
           added > 0 ? 'success' : 'error',
         )
         return
@@ -1573,7 +1576,7 @@ export default function AmazonPlanner() {
           <div>
             <h2 className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-50">亚马逊图片工作台</h2>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>OpenAI gpt-image-2</span>
+              <span>{isAliyunQwenProvider ? 'Qwen-Image 3.0 Pro' : 'OpenAI gpt-image-2'}</span>
               <span className="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600" />
               <span>2K / 4K</span>
               <span className="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600" />
@@ -1854,7 +1857,7 @@ export default function AmazonPlanner() {
                 <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">参考图</div>
                 <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                   {inputImages.length > 0
-                    ? `${inputImages.length}/${API_MAX_IMAGES} 张产品参考图${usesStyleReferenceForActivePlan ? `；正式生成时另附 1 张隐藏风格参考图（实际 ${effectiveReferenceCount}/${API_MAX_IMAGES}）` : '，将随生成请求一起发送'}`
+                    ? `${inputImages.length}/${inputImageLimit} 张产品参考图${usesStyleReferenceForActivePlan ? `；正式生成时另附 1 张隐藏风格参考图（实际 ${effectiveReferenceCount}/${inputImageLimit}）` : '，将随生成请求一起发送'}`
                     : usesStyleReferenceForActivePlan
                       ? `未上传产品参考图；正式生成时会附 1 张隐藏风格参考图`
                       : '建议上传产品实拍、包装或结构参考图'}
@@ -1939,7 +1942,7 @@ export default function AmazonPlanner() {
 
             {atImageLimit && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-                参考图数量已达上限（{API_MAX_IMAGES} 张），请删除不需要的图片后再上传。
+                参考图数量已达上限（{inputImageLimit} 张），请删除不需要的图片后再上传。
               </div>
             )}
 
@@ -2383,7 +2386,7 @@ export default function AmazonPlanner() {
               )}
               {styleReferenceLimitExceeded && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-                  当前产品参考图加隐藏风格参考图共 {effectiveReferenceCount} 张，超过上限 {API_MAX_IMAGES} 张，请删除一张产品参考图后再提交。
+                  当前产品参考图加隐藏风格参考图共 {effectiveReferenceCount} 张，超过上限 {inputImageLimit} 张，请删除一张产品参考图后再提交。
                 </div>
               )}
             </div>

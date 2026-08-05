@@ -54,7 +54,7 @@ import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
-import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
+import { getChangedParams, getInputImageLimitForSettings, normalizeParamsForSettings } from './lib/paramCompatibility'
 import { prepareReferenceImageAndMaskPayload } from './lib/referenceImagePayload'
 import { getTaskHistoryCategory } from './lib/taskHistory'
 import { isAmazonListingMainSlot } from './lib/listingPlanner'
@@ -84,7 +84,6 @@ const OPENAI_INTERRUPTED_ERROR = '请求中断'
 const AGENT_STOPPED_MESSAGE = '已停止生成。'
 const AGENT_CONVERSATION_TITLE_MAX_LENGTH = 28
 const ERROR_TOAST_MAX_LENGTH = 80
-const API_MAX_INPUT_IMAGES = 16
 const MAX_SEEDREAM_REFERENCE_IMAGES = 4
 type ToastType = 'info' | 'success' | 'error'
 type AgentInputDraft = {
@@ -2044,8 +2043,10 @@ export async function submitTaskWithInput(request: SubmitTaskWithInputRequest): 
     state.showToast('请输入编辑要求', 'error')
     return null
   }
-  if (request.inputImages.length > API_MAX_INPUT_IMAGES) {
-    state.showToast(`参考图数量不能超过 ${API_MAX_INPUT_IMAGES} 张`, 'error')
+  const requestSettings = createSettingsForApiProfile(settings, profile)
+  const inputImageLimit = getInputImageLimitForSettings(requestSettings)
+  if (request.inputImages.length > inputImageLimit) {
+    state.showToast(`参考图数量不能超过 ${inputImageLimit} 张`, 'error')
     return null
   }
 
@@ -2068,7 +2069,6 @@ export async function submitTaskWithInput(request: SubmitTaskWithInputRequest): 
     return null
   }
 
-  const requestSettings = createSettingsForApiProfile(settings, profile)
   const params = normalizeParamsForSettings(request.params, requestSettings, { hasInputImages: storedImages.length > 0 })
   const mapImageId = (id: string | null | undefined) => id ? imageIdMap.get(id) ?? id : id
   const imageEditContext = request.imageEditContext
@@ -2166,6 +2166,11 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     return false
   }
   const category = resolvePendingTaskCategory(pendingTaskCategory, trimmedPrompt)
+  const inputImageLimit = getInputImageLimitForSettings(requestSettings)
+  if (inputImages.length > inputImageLimit) {
+    showToast(`参考图数量不能超过 ${inputImageLimit} 张`, 'error')
+    return false
+  }
 
   let orderedInputImages = inputImages
   let maskImageId: string | null = null
@@ -2201,8 +2206,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
 
   const styleReferenceImageId = category.styleReferenceImageId?.trim()
   if (styleReferenceImageId && !orderedInputImages.some((img) => img.id === styleReferenceImageId)) {
-    if (orderedInputImages.length + 1 > API_MAX_INPUT_IMAGES) {
-      showToast(`已选择隐藏风格参考板，实际参考图数量不能超过 ${API_MAX_INPUT_IMAGES} 张；请删除一张产品参考图后再提交。`, 'error')
+    if (orderedInputImages.length + 1 > inputImageLimit) {
+      showToast(`已选择隐藏风格参考板，实际参考图数量不能超过 ${inputImageLimit} 张；请删除一张产品参考图后再提交。`, 'error')
       return false
     }
     const dataUrl = await ensureImageCached(styleReferenceImageId)

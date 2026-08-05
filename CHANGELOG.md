@@ -3,6 +3,17 @@
 按自然周（周一至周日）整理，最新一周在最上方。每个周块可展开查看本周推送内容，提交号用于回溯具体改动。
 
 <details open>
+<summary><strong>2026-08-03 至 2026-08-09</strong> - 阿里云百炼 Qwen-Image 3.0 Pro 接入</summary>
+
+- 生图配置无需新增服务商选项：在“OpenAI 兼容接口”中填写 DashScope/MaaS API URL（例如 `https://dashscope.aliyuncs.com/api/v1` 或业务空间专属域名）和 API Key，应用会自动识别阿里云地址并切换到百炼原生多模态生图协议。
+- 模型留空或仍为默认 `gpt-image-2` 时自动使用 `qwen-image-3.0-pro`，也可显式填写；请求隐式开启 `prompt_extend: true`，输出固定为 PNG。
+- 原生接口支持 1–6 张结果和最多 3 张参考图，不支持遮罩编辑；界面会按接口能力隐藏质量、压缩率、审核参数，并在亚马逊工作台与上传入口按 3 张参考图上限校验。
+- 百炼返回的临时图片 URL 有效期约 24 小时，应用会立即下载并保存到本地；开发服务、Docker 与 Nginx 的图片代理白名单同步加入 `aliyuncs.com` / `aliyun.com`，跨域图片可正常下载。
+- 提交：随本次 `main` 推送发布。
+
+</details>
+
+<details open>
 <summary><strong>2026-07-27 至 2026-08-02</strong> - AI 人物媒体 XMP 打标</summary>
 
 - 新增独立“AI 人物打标”工作区，在浏览器本地为 JPG/JPEG、PNG、WebP、MP4、MOV 写入 Amazon 要求的 `contains-synthetic-performer` XMP 标记，支持单文件下载或多文件 ZIP。

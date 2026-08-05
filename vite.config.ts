@@ -12,7 +12,11 @@ function isAllowedImageProxyUrl(value: string) {
     return host === 'volces.com' ||
       host.endsWith('.volces.com') ||
       host === 'volcengine.com' ||
-      host.endsWith('.volcengine.com')
+      host.endsWith('.volcengine.com') ||
+      host === 'aliyuncs.com' ||
+      host.endsWith('.aliyuncs.com') ||
+      host === 'aliyun.com' ||
+      host.endsWith('.aliyun.com')
   } catch {
     return false
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { createApiProfileRequestSettings, createDefaultFalProfile, createDefaultOpenAIProfile, createDefaultVolcengineProfile, DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
-import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
+import { getInputImageLimitForSettings, getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
   it('limits OpenAI output count to 10', () => {
@@ -58,6 +58,40 @@ describe('parameter compatibility', () => {
 
     expect(getOutputImageLimitForSettings(settings)).toBe(1)
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 4 }, settings).n).toBe(1)
+  })
+
+  it('detects Alibaba image URLs without exposing another provider and applies Qwen limits', () => {
+    const aliyunProfile = createDefaultOpenAIProfile({
+      apiKey: 'dashscope-key',
+      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen-image-3.0-pro',
+    })
+    const normalized = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [aliyunProfile],
+      activeProfileId: aliyunProfile.id,
+    })
+    const settings = createApiProfileRequestSettings(normalized, aliyunProfile.id)!
+
+    expect(settings.profiles[0]?.provider).toBe('openai')
+    expect(getOutputImageLimitForSettings(settings)).toBe(6)
+    expect(getInputImageLimitForSettings(settings)).toBe(3)
+    expect(normalizeParamsForSettings({
+      ...DEFAULT_PARAMS,
+      size: '4096x4096',
+      output_format: 'jpeg',
+      quality: 'high',
+      moderation: 'low',
+      output_compression: 70,
+      n: 10,
+    }, settings)).toMatchObject({
+      size: '2048x2048',
+      output_format: 'png',
+      quality: 'auto',
+      moderation: 'auto',
+      output_compression: null,
+      n: 6,
+    })
   })
 
   it('ignores deprecated OpenAI streaming settings when normalizing output count', () => {
