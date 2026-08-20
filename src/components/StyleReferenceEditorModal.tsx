@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StyleReferenceEditState } from '../types'
 import { renderStyleReferenceDataUrl, sanitizeStyleReferenceEditState } from '../lib/styleReferences'
+import { getStylePaletteEntries, isStyleHexColor, normalizeStylePaletteColor } from '../lib/stylePalette'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { CloseIcon } from './icons'
 import { Sheet } from './Sheet'
+import StylePaletteLegend from './StylePaletteLegend'
 
 const FIELD_CLASS = 'ios-field w-full px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500'
 const LABEL_CLASS = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.07em] text-gray-500 dark:text-gray-400'
@@ -86,6 +88,7 @@ export default function StyleReferenceEditorModal({
   const [preview, setPreview] = useState('')
   const scrollBoundaryRef = useRef<HTMLDivElement>(null)
   const sanitizedDraft = useMemo(() => sanitizeStyleReferenceEditState(draft), [draft])
+  const paletteEntries = useMemo(() => getStylePaletteEntries(draft.palette), [draft.palette])
 
   useCloseOnEscape(true, onClose)
   usePreventBackgroundScroll(true, scrollBoundaryRef)
@@ -145,24 +148,41 @@ export default function StyleReferenceEditorModal({
 
             <div>
               <div className={LABEL_CLASS}>色板</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {draft.palette.map((color, index) => (
-                  <label key={index} className="flex min-w-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-white/[0.08] dark:bg-gray-900">
-                    <input
-                      type="color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#FFFFFF'}
-                      onChange={(event) => updatePalette(index, event.target.value)}
-                      className="h-8 w-10 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
-                      aria-label={`颜色 ${index + 1}`}
-                    />
-                    <input
-                      value={color}
-                      onChange={(event) => updatePalette(index, event.target.value)}
-                      className="min-w-0 flex-1 bg-transparent font-mono text-xs text-gray-700 outline-none dark:text-gray-200"
-                      maxLength={7}
-                    />
-                  </label>
-                ))}
+              <div className="mb-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                预览图中的 C1–C6 按下面的用途对应；HEX 是精确颜色值，中文色名只是方便记忆的近似叫法。
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {paletteEntries.map((entry) => {
+                  const color = draft.palette[entry.index] ?? ''
+                  return (
+                    <label key={entry.code} className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 p-2.5 dark:border-white/[0.08] dark:bg-gray-900">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <input
+                          type="color"
+                          value={isStyleHexColor(color) ? color : normalizeStylePaletteColor(color)}
+                          onChange={(event) => updatePalette(entry.index, event.target.value)}
+                          className="h-9 w-11 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
+                          aria-label={`编辑 ${entry.code} ${entry.roleLabel}`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200">{entry.code} · {entry.roleLabel}</span>
+                            <span className="shrink-0 text-[11px] font-medium text-gray-500 dark:text-gray-400">{entry.colorName}</span>
+                          </div>
+                          <input
+                            value={color}
+                            onChange={(event) => updatePalette(entry.index, event.target.value)}
+                            className="mt-1 w-full bg-transparent font-mono text-xs text-gray-700 outline-none dark:text-gray-200"
+                            maxLength={7}
+                            aria-label={`${entry.code} HEX 颜色值`}
+                            placeholder="#FFFFFF"
+                          />
+                          <div className="mt-1 text-[10px] leading-relaxed text-gray-400 dark:text-gray-500">{entry.roleDescription}</div>
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
               </div>
             </div>
 
@@ -177,12 +197,13 @@ export default function StyleReferenceEditorModal({
                       onClick={() => setDraft((current) => ({ ...current, [field]: option.value }))}
                       className={`min-h-[104px] rounded-lg border px-3 py-2 text-left transition ${draft[field] === option.value ? 'border-blue-400 bg-blue-50 text-blue-800 ring-2 ring-blue-500/10 dark:border-blue-300/60 dark:bg-blue-400/10 dark:text-blue-100' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/[0.08] dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.05]'}`}
                     >
-                      <span className="block text-xs font-semibold leading-snug">{option.value}</span>
-                      <span className="mt-1 block text-xs font-semibold text-gray-800 dark:text-gray-100">{option.labelZh}</span>
+                      <span className="block text-xs font-semibold leading-snug text-gray-900 dark:text-gray-100">{option.labelZh}</span>
+                      <span className="mt-1 block text-[11px] font-medium leading-snug text-gray-500 dark:text-gray-400">英文方向：{option.value}</span>
                       <span className="mt-1 block text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{option.descriptionZh}</span>
                     </button>
                   ))}
                 </div>
+                <div className="mt-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">英文方向（发送给模型）</div>
                 <input
                   value={draft[field]}
                   onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
@@ -190,7 +211,7 @@ export default function StyleReferenceEditorModal({
                   maxLength={80}
                 />
                 <div className="mt-1 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
-                  建议保留英文方向；上方中文说明只用于理解，不会写进右侧风格参考图。
+                  上方中文名称和说明用于理解；输入框保留英文方向并发送给模型，不会写进右侧风格参考图。
                 </div>
               </div>
             ))}
@@ -222,6 +243,10 @@ export default function StyleReferenceEditorModal({
               ) : (
                 <div className="flex aspect-square items-center justify-center text-xs text-gray-400">无法生成预览</div>
               )}
+            </div>
+            <div className="mt-3 rounded-xl border border-gray-200 bg-white/70 p-3 dark:border-white/[0.08] dark:bg-white/[0.04]">
+              <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">预览图色块对应关系</div>
+              <StylePaletteLegend palette={sanitizedDraft.palette} mode="legend" className="mt-2" />
             </div>
           </div>
         </div>

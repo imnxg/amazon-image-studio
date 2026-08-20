@@ -882,10 +882,18 @@ export default function ImageEditorPage() {
                     <div className="aspect-square">
                       {imageDataUrls[imageId] ? <img src={imageDataUrls[imageId]} alt={`参考图 ${index + 1}`} className="h-full w-full object-cover" /> : <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />}
                     </div>
-                    <div className="ios-floating-chrome absolute left-1.5 top-1.5 !rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-white">参考 {index + 1}</div>
-                    <div className="ios-floating-chrome absolute inset-x-1 bottom-1 flex justify-between !rounded-[10px] p-0.5 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
+                    <div className="absolute left-1.5 top-1.5 z-10 rounded-md bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm">参考 {index + 1}</div>
+                    <button
+                      type="button"
+                      onClick={() => removeReference(imageId)}
+                      className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/75 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm transition hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                      title="移除参考图"
+                      aria-label={`移除参考图 ${index + 1}`}
+                    >
+                      <CloseIcon className="h-3.5 w-3.5" />
+                    </button>
+                    <div className="absolute inset-x-1 bottom-1 z-10 flex justify-between rounded-[10px] bg-black/75 p-0.5 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
                       <button type="button" disabled={index === 0} onClick={() => moveReference(index, -1)} className="rounded p-1 text-white disabled:opacity-30" title="前移"><ChevronLeftIcon className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => removeReference(imageId)} className="rounded p-1 text-white" title="移除"><CloseIcon className="h-3.5 w-3.5" /></button>
                       <button type="button" disabled={index === draft.referenceImageIds.length - 1} onClick={() => moveReference(index, 1)} className="rounded p-1 text-white disabled:opacity-30" title="后移"><ChevronRightIcon className="h-3.5 w-3.5" /></button>
                     </div>
                   </div>

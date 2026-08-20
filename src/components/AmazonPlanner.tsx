@@ -67,6 +67,7 @@ import {
 import { DEFAULT_PARAMS } from '../types'
 import type { AmazonPlannerSession, CustomStyleReference, StyleReferenceEditState } from '../types'
 import StyleReferenceEditorModal from './StyleReferenceEditorModal'
+import StylePaletteLegend from './StylePaletteLegend'
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, EditIcon, EyeIcon, HistoryIcon, PhotoIcon, PlusIcon, RefreshIcon, TrashIcon } from './icons'
 
 const FIELD_CLASS = 'ios-field w-full px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500'
@@ -2251,6 +2252,7 @@ export default function AmazonPlanner() {
                                   />
                                 ))}
                               </div>
+                              <StylePaletteLegend palette={preset.palette} className="mt-2" />
                             </div>
                           </button>
                           <div className="grid grid-cols-2 gap-1 border-t border-gray-100 p-2 dark:border-white/[0.08]">
@@ -2326,6 +2328,7 @@ export default function AmazonPlanner() {
                                     />
                                   ))}
                                 </div>
+                                <StylePaletteLegend palette={meta.palette} className="mt-2" />
                               </div>
                             </button>
                             <div className="grid grid-cols-3 gap-1 border-t border-gray-100 p-2 dark:border-white/[0.08]">
@@ -2382,6 +2385,7 @@ export default function AmazonPlanner() {
                   {isMainListingPlan
                     ? `已选择「${selectedStyleLabel}」，但当前 MAIN 主图不会附加这张风格参考图；切换到附图或 A+ 时才会作为隐藏参考。`
                     : `已选择「${selectedStyleLabel}」。正式生成时会隐藏附加这张风格参考图作为最后一张参考图，用于统一字体感觉、色板、光影、材质和标注样式，不复制其中占位文字、固定版式或产品摆放。`}
+                  <StylePaletteLegend palette={selectedVisualStyle?.palette ?? []} mode="summary" className="mt-2" />
                 </div>
               )}
               {styleReferenceLimitExceeded && (
