@@ -3,16 +3,17 @@
 按自然周（周一至周日）整理，最新一周在最上方。每个周块可展开查看本周推送内容，提交号用于回溯具体改动。
 
 <details open>
-<summary><strong>未发布</strong> - 图片编辑分辨率兼容性修复</summary>
+<summary><strong>2026-08-31 至 2026-09-06</strong> - 图片编辑分辨率兼容性修复与多分辨率提示</summary>
 
 - 图片编辑页新增 1K 输出档位，并始终保留首页生图的 1K/2K/4K 选项；使用 `gpt-image-2` 基础模型时默认选择 1K，避免默认向仅支持 1K 的模型发送 2K/4K 尺寸导致报错。
 - 按已知模型能力选择默认档位：`gpt-image-2-2k`、`gpt-image-2-4k` 和 Seedream Pro 默认使用对应原生档位，同时允许其他接口手动选择其支持的分辨率。
 - 首页编辑在 1K 默认接口上手动选择 2K/4K 时显示 Codex 能力反代的兼容性提示，不阻止其他接口使用其实际支持的更高档位。
 - 修复图片编辑历史尺寸恢复时的分辨率档位判断，并补充 1K 尺寸与模型适配回归测试。
+- 提交：`df2be95`、`cb88f05`。
 
 </details>
 
-<details open>
+<details>
 <summary><strong>2026-08-17 至 2026-08-23</strong> - 风格色板可读性与图片编辑体验优化</summary>
 
 - 视觉风格卡片和编辑面板不再只显示 `C1–C6` 色块与 HEX：每个颜色现在会标注背景、辅助、强调、文字、中性或高亮等中文用途，并显示便于记忆的近似中文色名与精确 HEX 值。
@@ -22,7 +23,7 @@
 
 </details>
 
-<details open>
+<details>
 <summary><strong>2026-08-03 至 2026-08-09</strong> - 阿里云百炼 Qwen-Image 3.0 Pro 接入</summary>
 
 - 生图配置无需新增服务商选项：在“OpenAI 兼容接口”中填写 DashScope/MaaS API URL（例如 `https://dashscope.aliyuncs.com/api/v1` 或业务空间专属域名）和 API Key，应用会自动识别阿里云地址并切换到百炼原生多模态生图协议。
@@ -33,7 +34,7 @@
 
 </details>
 
-<details open>
+<details>
 <summary><strong>2026-07-27 至 2026-08-02</strong> - AI 人物媒体 XMP 打标</summary>
 
 - 新增独立“AI 人物打标”工作区，在浏览器本地为 JPG/JPEG、PNG、WebP、MP4、MOV 写入 Amazon 要求的 `contains-synthetic-performer` XMP 标记，支持单文件下载或多文件 ZIP。
