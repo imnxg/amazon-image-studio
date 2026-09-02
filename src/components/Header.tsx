@@ -6,6 +6,7 @@ import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
 import { HelpCircleIcon, InstallIcon, SettingsIcon } from './icons'
 import { Button } from './Button'
+import { isLocalAppHostname } from '../lib/pwa'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -19,6 +20,8 @@ type HeaderProps = {
   onNavigate: (view: AppView) => void
 }
 
+const LOCAL_INSTALL_REMINDER = '这是本地版。安装后，下次启动应用前仍需要先打开项目目录中的 start-amazon-image-studio.bat，保持本地服务运行；否则应用无法使用。'
+
 function isInstalledPwa() {
   const nav = window.navigator as Navigator & { standalone?: boolean }
   return window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true
@@ -30,6 +33,7 @@ export default function Header({ activeView, onNavigate }: HeaderProps) {
   const [showHelp, setShowHelp] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isPwaInstalled, setIsPwaInstalled] = useState(isInstalledPwa)
+  const isLocalApp = isLocalAppHostname(window.location.hostname)
 
   const installTooltip = useTooltip()
   const helpTooltip = useTooltip()
@@ -56,40 +60,53 @@ export default function Header({ activeView, onNavigate }: HeaderProps) {
     }
   }, [])
 
-  const handleInstallClick = async () => {
+  const promptInstall = async (promptEvent: BeforeInstallPromptEvent) => {
+    setInstallPrompt(null)
+
+    try {
+      await promptEvent.prompt()
+      const choice = await promptEvent.userChoice
+      setIsPwaInstalled(choice.outcome === 'accepted')
+    } catch {
+      setIsPwaInstalled(isInstalledPwa())
+    }
+  }
+
+  const handleInstallClick = () => {
     if (installPrompt) {
       const promptEvent = installPrompt
-      setInstallPrompt(null)
 
-      try {
-        await promptEvent.prompt()
-        const choice = await promptEvent.userChoice
-        setIsPwaInstalled(choice.outcome === 'accepted')
-      } catch {
-        setIsPwaInstalled(isInstalledPwa())
-      }
-    } else {
-      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-      if (isIos) {
+      if (isLocalApp) {
         setConfirmDialog({
           title: '安装为应用',
-          message: '在 Safari 浏览器中，点击底部「分享」按钮，选择「添加到主屏幕」即可安装此应用。',
-          showCancel: false,
-          confirmText: '我知道了',
+          message: LOCAL_INSTALL_REMINDER,
+          showCancel: true,
+          confirmText: '继续安装',
+          cancelText: '取消',
           icon: 'info',
-          action: () => {},
+          action: () => {
+            void promptInstall(promptEvent)
+          },
         })
       } else {
-        setConfirmDialog({
-          title: '安装为应用',
-          message: '请在浏览器的菜单中选择「添加到主屏幕」或「安装应用」。\n\n（如果在微信等内置浏览器中，请先在外部浏览器打开）',
-          showCancel: false,
-          confirmText: '我知道了',
-          icon: 'info',
-          action: () => {},
-        })
+        void promptInstall(promptEvent)
       }
+      return
     }
+
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    const installInstructions = isIos
+      ? '在 Safari 浏览器中，点击底部「分享」按钮，选择「添加到主屏幕」即可安装此应用。'
+      : '请在浏览器的菜单中选择「添加到主屏幕」或「安装应用」。\n\n（如果在微信等内置浏览器中，请先在外部浏览器打开）'
+
+    setConfirmDialog({
+      title: isLocalApp ? '安装本地应用' : '安装为应用',
+      message: isLocalApp ? `${LOCAL_INSTALL_REMINDER}\n\n${installInstructions}` : installInstructions,
+      showCancel: false,
+      confirmText: '我知道了',
+      icon: 'info',
+      action: () => {},
+    })
   }
 
   return (

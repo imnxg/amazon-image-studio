@@ -36,6 +36,7 @@
 - 按已知模型能力选择默认档位：`gpt-image-2-2k`、`gpt-image-2-4k` 和 Seedream Pro 默认使用对应原生档位，同时允许其他接口手动选择其支持的分辨率。
 - 首页编辑在 1K 默认接口上手动选择 2K/4K 时显示 Codex 能力反代的兼容性提示，不阻止其他接口使用其实际支持的更高档位。
 - 修复图片编辑历史尺寸恢复时的分辨率档位判断，并补充 1K 尺寸与模型适配回归测试。
+- 本地版保留“安装为应用”入口，但安装前会提示后续每次启动仍需先打开 `start-amazon-image-studio.bat`，保持本地服务运行。
 - 提交：`df2be95`、`cb88f05`。
 
 </details>
@@ -186,6 +187,7 @@
 - 体验地址：[https://ali-aria.github.io/amazon-image-studio/](https://ali-aria.github.io/amazon-image-studio/)
 - 打开在线体验不需要 Codex；Codex 只是一种可选的本地安装方式。
 - 在线体验不会内置 API Key；生成图片和 AI 策划都需要在右上角设置中填写你自己的 OpenAI 或兼容接口 Key。
+- “安装为应用”也可以用于本地版，但它不会自动启动本地服务；以后每次启动本地应用前，请先运行项目目录中的 `start-amazon-image-studio.bat`。
 - API Key 保存在当前浏览器本地，不会提交到仓库；如果线上页面加载异常，也可以按下面的“启动项目”在本地运行。
 - 💡 提示：若需调用非 HTTPS 的内网或本地 HTTP API，请使用 GitHub Pages 版本或自行部署，Vercel 部署的体验版绑定的 .dev 域名因安全策略通常要求接口必须为 HTTPS。
 
