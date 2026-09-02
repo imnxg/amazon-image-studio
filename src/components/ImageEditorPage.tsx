@@ -8,6 +8,8 @@ import {
   createSeedreamVisualGuideDataUrl,
   findLatestImageEditorTask,
   findSeedreamAnnotationAtPoint,
+  getDefaultImageEditorResolution,
+  getImageEditorResolutionOptions,
   SEEDREAM_EDITOR_COLORS,
   SEEDREAM_EDITOR_REFERENCE_LIMIT,
   translateSeedreamAnnotation,
@@ -308,7 +310,20 @@ export default function ImageEditorPage() {
         : profileValidationError
           ? `${draft.engine === 'seedream' ? 'Seedream 编辑' : '首页生图'}配置不完整：${profileValidationError}`
           : null
+  const resolutionOptions = useMemo(
+    () => getImageEditorResolutionOptions(draft.engine, profile),
+    [draft.engine, profile?.model, profile?.provider],
+  )
+  const defaultResolution = useMemo(
+    () => getDefaultImageEditorResolution(draft.engine, profile),
+    [draft.engine, profile?.model, profile?.provider],
+  )
+  const selectedResolution = resolutionOptions.includes(draft.resolution) ? draft.resolution : defaultResolution
   const isRunning = latestTask?.status === 'running'
+
+  useEffect(() => {
+    if (!resolutionOptions.includes(draft.resolution)) setDraft({ resolution: defaultResolution })
+  }, [defaultResolution, draft.resolution, resolutionOptions, setDraft])
 
   useEffect(() => {
     setCurrentAnnotation(null)
@@ -629,7 +644,7 @@ export default function ImageEditorPage() {
           referenceCount: referenceImages.length,
         }),
         inputImages,
-        params: createImageEditorParams(draft.resolution, profile, dimensions),
+        params: createImageEditorParams(selectedResolution, profile, dimensions),
         category: { workflow: 'seedream-edit' },
         imageEditContext: {
           engine: draft.engine,
@@ -914,12 +929,16 @@ export default function ImageEditorPage() {
             <div className="mt-4 flex items-center justify-between gap-3">
               <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">输出分辨率</span>
               <div className="ios-segmented flex">
-                {(['2k', '4k'] as const).map((resolution) => (
+                {resolutionOptions.map((resolution) => (
                   <button key={resolution} type="button" aria-pressed={draft.resolution === resolution} data-active={draft.resolution === resolution} onClick={() => setDraft({ resolution })} className={`ios-segment h-8 px-4 text-xs font-semibold ${draft.resolution === resolution ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>{resolution.toUpperCase()}</button>
                 ))}
               </div>
             </div>
-            <div className="mt-2 text-right text-[11px] text-gray-400">固定单张输出 · 保持主图比例</div>
+            <div className="mt-2 text-right text-[11px] text-gray-400">
+              {resolutionOptions.length === 1
+                ? `当前模型仅支持 ${resolutionOptions[0].toUpperCase()}；如需其他档位，请在编辑配置中切换对应模型`
+                : '固定单张输出 · 保持主图比例'}
+            </div>
 
             <button type="button" onClick={() => void generate()} disabled={submitting || isRunning || !draft.sourceImageId || !draft.instruction.trim() || Boolean(profileError)} className="ios-button ios-button-filled mt-4 flex h-11 w-full items-center justify-center gap-2 px-4 text-sm font-semibold disabled:cursor-not-allowed">
               {(submitting || isRunning) && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}

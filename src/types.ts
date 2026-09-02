@@ -148,7 +148,8 @@ export interface MaskDraft {
   updatedAt: number
 }
 
-export type SeedreamEditorResolution = '2k' | '4k'
+// 图片编辑页的分辨率档位：首页生图 API 支持 1K，Seedream Pro 原生使用 2K/4K。
+export type SeedreamEditorResolution = '1k' | '2k' | '4k'
 export type ImageEditorEngine = 'home' | 'seedream'
 export type SeedreamAnnotationKind = 'brush' | 'rectangle' | 'ellipse' | 'arrow'
 

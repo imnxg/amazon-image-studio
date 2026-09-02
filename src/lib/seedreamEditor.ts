@@ -6,6 +6,35 @@ import { calculateImageSize } from './size'
 
 export const SEEDREAM_EDITOR_REFERENCE_LIMIT = 4
 export const SEEDREAM_EDITOR_COLORS = ['#ef4444', '#2563eb', '#16a34a', '#eab308'] as const
+const HOME_IMAGE_EDITOR_RESOLUTIONS = ['1k', '2k', '4k'] as const
+const SEEDREAM_IMAGE_EDITOR_RESOLUTIONS = ['2k', '4k'] as const
+
+type NativeSeedreamResolution = (typeof SEEDREAM_IMAGE_EDITOR_RESOLUTIONS)[number]
+
+function getKnownGptImage2Resolution(model: string): SeedreamEditorResolution | null {
+  const normalized = model.trim().replace(/^\/+|\/+$/g, '')
+  if (/gpt-image-2-4k(?:\/|$)/i.test(normalized)) return '4k'
+  if (/gpt-image-2-2k(?:\/|$)/i.test(normalized)) return '2k'
+  if (/(?:^|\/)gpt-image-2(?:\/|$)/i.test(normalized)) return '1k'
+  return null
+}
+
+export function getImageEditorResolutionOptions(
+  engine: ImageEditorEngine,
+  profile?: Pick<ApiProfile, 'provider' | 'model'> | null,
+): SeedreamEditorResolution[] {
+  if (engine === 'seedream') return [...SEEDREAM_IMAGE_EDITOR_RESOLUTIONS]
+
+  const knownResolution = getKnownGptImage2Resolution(profile?.model ?? '')
+  return knownResolution ? [knownResolution] : [...HOME_IMAGE_EDITOR_RESOLUTIONS]
+}
+
+export function getDefaultImageEditorResolution(
+  engine: ImageEditorEngine,
+  profile?: Pick<ApiProfile, 'provider' | 'model'> | null,
+): SeedreamEditorResolution {
+  return getImageEditorResolutionOptions(engine, profile)[0] ?? '1k'
+}
 
 export interface SeedreamEditPromptOptions {
   instruction: string
@@ -67,7 +96,7 @@ export function buildSeedreamEditPrompt({ instruction, hasVisualGuide, reference
   ].filter((line): line is string => line != null).join('\n')
 }
 
-export function createSeedreamEditorParams(resolution: SeedreamEditorResolution): TaskParams {
+export function createSeedreamEditorParams(resolution: NativeSeedreamResolution): TaskParams {
   return {
     ...DEFAULT_PARAMS,
     size: resolution === '4k' ? '4K' : '2K',
@@ -83,16 +112,16 @@ export function createImageEditorParams(
   sourceDimensions: { width: number; height: number },
 ): TaskParams {
   if (profile.provider === 'volcengine' && isVolcengineSeedreamProModel(profile.model)) {
-    return createSeedreamEditorParams(resolution)
+    return createSeedreamEditorParams(resolution === '4k' ? '4k' : '2k')
   }
 
-  const tier = resolution === '4k' ? '4K' : '2K'
+  const tier = resolution === '1k' ? '1K' : resolution === '4k' ? '4K' : '2K'
   const ratio = sourceDimensions.width > 0 && sourceDimensions.height > 0
     ? `${sourceDimensions.width}:${sourceDimensions.height}`
     : '1:1'
   return {
     ...DEFAULT_PARAMS,
-    size: calculateImageSize(tier, ratio) ?? (resolution === '4k' ? '2880x2880' : '2048x2048'),
+    size: calculateImageSize(tier, ratio) ?? (resolution === '4k' ? '2880x2880' : resolution === '1k' ? '1024x1024' : '2048x2048'),
     n: 1,
     output_format: 'jpeg',
   }

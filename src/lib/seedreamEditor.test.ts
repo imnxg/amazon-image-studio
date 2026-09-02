@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS, type TaskRecord } from '../types'
-import { appendSeedreamQuickAction, buildSeedreamEditPrompt, createImageEditorParams, createSeedreamEditorParams, findLatestImageEditorTask, findSeedreamAnnotationAtPoint, translateSeedreamAnnotation } from './seedreamEditor'
+import { appendSeedreamQuickAction, buildSeedreamEditPrompt, createImageEditorParams, createSeedreamEditorParams, findLatestImageEditorTask, findSeedreamAnnotationAtPoint, getDefaultImageEditorResolution, getImageEditorResolutionOptions, translateSeedreamAnnotation } from './seedreamEditor'
 
 function editorTask(overrides: Partial<TaskRecord>): TaskRecord {
   return {
@@ -60,6 +60,23 @@ describe('Seedream editor params', () => {
     ['4k', '4K'],
   ] as const)('locks %s tasks to one output', (resolution, expectedSize) => {
     expect(createSeedreamEditorParams(resolution)).toMatchObject({ size: expectedSize, n: 1 })
+  })
+
+  it('supports 1K home edits while preserving the source ratio', () => {
+    const profile = { provider: 'fal', model: 'openai/gpt-image-2' }
+    expect(createImageEditorParams('1k', profile, { width: 2592, height: 1616 })).toMatchObject({
+      size: '1584x992',
+      n: 1,
+    })
+  })
+
+  it('only exposes the resolution tiers supported by known GPT Image 2 model variants', () => {
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2' })).toEqual(['1k'])
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-2k' })).toEqual(['2k'])
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-4k' })).toEqual(['4k'])
+    expect(getImageEditorResolutionOptions('home', { provider: 'openai', model: 'custom-image-model' })).toEqual(['1k', '2k', '4k'])
+    expect(getImageEditorResolutionOptions('seedream', { provider: 'volcengine', model: 'doubao-seedream-5-0-pro-260628' })).toEqual(['2k', '4k'])
+    expect(getDefaultImageEditorResolution('home', { provider: 'fal', model: 'openai/gpt-image-2' })).toBe('1k')
   })
 
   it('converts GPT editor tiers into dimensions that preserve the source ratio', () => {

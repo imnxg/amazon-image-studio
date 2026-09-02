@@ -100,7 +100,7 @@ const DEFAULT_SEEDREAM_EDITOR_DRAFT: SeedreamEditorDraft = {
   referenceImageIds: [],
   instruction: '',
   annotations: [],
-  resolution: '2k',
+  resolution: '1k',
   latestTaskId: null,
   updatedAt: 0,
 }
@@ -1591,7 +1591,7 @@ export function normalizeSeedreamEditorDraft(value: unknown): SeedreamEditorDraf
     annotations: Array.isArray(draft.annotations)
       ? draft.annotations.map(normalizeSeedreamAnnotation).filter((item): item is SeedreamAnnotation => item != null)
       : [],
-    resolution: draft.resolution === '4k' ? '4k' : '2k',
+    resolution: draft.resolution === '4k' ? '4k' : draft.resolution === '2k' ? '2k' : '1k',
     latestTaskId: typeof draft.latestTaskId === 'string' && draft.latestTaskId ? draft.latestTaskId : null,
     updatedAt: typeof draft.updatedAt === 'number' && Number.isFinite(draft.updatedAt) ? draft.updatedAt : 0,
   }
@@ -4030,9 +4030,16 @@ function navigateToSeedreamEditor() {
 }
 
 function getSeedreamEditorResolutionFromSize(size: string): SeedreamEditorDraft['resolution'] {
-  if (size.toUpperCase().includes('4K')) return '4k'
+  const normalized = size.trim().toUpperCase()
+  if (normalized.includes('4K')) return '4k'
+  if (normalized.includes('2K')) return '2k'
   const match = size.match(/^(\d+)\s*[xX×]\s*(\d+)$/)
-  return match && Math.max(Number(match[1]), Number(match[2])) > 2048 ? '4k' : '2k'
+  if (!match) return '2k'
+
+  const pixels = Number(match[1]) * Number(match[2])
+  if (pixels <= 1_572_864) return '1k'
+  if (pixels <= 4_194_304) return '2k'
+  return '4k'
 }
 
 export function openImageInSeedreamEditor(imageId: string) {
