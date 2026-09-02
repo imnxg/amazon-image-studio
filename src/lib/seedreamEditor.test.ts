@@ -70,13 +70,16 @@ describe('Seedream editor params', () => {
     })
   })
 
-  it('only exposes the resolution tiers supported by known GPT Image 2 model variants', () => {
-    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2' })).toEqual(['1k'])
-    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-2k' })).toEqual(['2k'])
-    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-4k' })).toEqual(['4k'])
+  it('keeps all home resolution tiers visible while selecting a model-aware default', () => {
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2' })).toEqual(['1k', '2k', '4k'])
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-2k' })).toEqual(['1k', '2k', '4k'])
+    expect(getImageEditorResolutionOptions('home', { provider: 'fal', model: 'openai/gpt-image-2-4k' })).toEqual(['1k', '2k', '4k'])
     expect(getImageEditorResolutionOptions('home', { provider: 'openai', model: 'custom-image-model' })).toEqual(['1k', '2k', '4k'])
     expect(getImageEditorResolutionOptions('seedream', { provider: 'volcengine', model: 'doubao-seedream-5-0-pro-260628' })).toEqual(['2k', '4k'])
     expect(getDefaultImageEditorResolution('home', { provider: 'fal', model: 'openai/gpt-image-2' })).toBe('1k')
+    expect(getDefaultImageEditorResolution('home', { provider: 'fal', model: 'openai/gpt-image-2-2k' })).toBe('2k')
+    expect(getDefaultImageEditorResolution('home', { provider: 'fal', model: 'openai/gpt-image-2-4k' })).toBe('4k')
+    expect(getDefaultImageEditorResolution('seedream', { provider: 'volcengine', model: 'doubao-seedream-5-0-pro-260628' })).toBe('2k')
   })
 
   it('converts GPT editor tiers into dimensions that preserve the source ratio', () => {

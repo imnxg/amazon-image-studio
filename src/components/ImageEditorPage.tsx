@@ -319,6 +319,9 @@ export default function ImageEditorPage() {
     [draft.engine, profile?.model, profile?.provider],
   )
   const selectedResolution = resolutionOptions.includes(draft.resolution) ? draft.resolution : defaultResolution
+  const showCodexResolutionWarning = draft.engine === 'home'
+    && defaultResolution === '1k'
+    && selectedResolution !== '1k'
   const isRunning = latestTask?.status === 'running'
 
   useEffect(() => {
@@ -934,9 +937,11 @@ export default function ImageEditorPage() {
                 ))}
               </div>
             </div>
-            <div className="mt-2 text-right text-[11px] text-gray-400">
-              {resolutionOptions.length === 1
-                ? `当前模型仅支持 ${resolutionOptions[0].toUpperCase()}；如需其他档位，请在编辑配置中切换对应模型`
+            <div className={`mt-2 text-right text-[11px] ${showCodexResolutionWarning ? 'text-amber-600 dark:text-amber-300' : 'text-gray-400'}`}>
+              {showCodexResolutionWarning
+                ? '提示：使用 Codex 能力的反代 API 目前只支持 1K，选择 2K/4K 可能报错；其他接口请以实际支持为准'
+                : draft.engine === 'home' && defaultResolution === '1k'
+                ? '默认使用 1K；2K/4K 是否可用取决于当前接口 · 固定单张输出 · 保持主图比例'
                 : '固定单张输出 · 保持主图比例'}
             </div>
 

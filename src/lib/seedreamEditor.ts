@@ -25,15 +25,17 @@ export function getImageEditorResolutionOptions(
 ): SeedreamEditorResolution[] {
   if (engine === 'seedream') return [...SEEDREAM_IMAGE_EDITOR_RESOLUTIONS]
 
-  const knownResolution = getKnownGptImage2Resolution(profile?.model ?? '')
-  return knownResolution ? [knownResolution] : [...HOME_IMAGE_EDITOR_RESOLUTIONS]
+  // Keep all home tiers visible because non-Codex proxies may support 2K/4K
+  // even when the currently selected known model variant only advertises one tier.
+  return [...HOME_IMAGE_EDITOR_RESOLUTIONS]
 }
 
 export function getDefaultImageEditorResolution(
   engine: ImageEditorEngine,
   profile?: Pick<ApiProfile, 'provider' | 'model'> | null,
 ): SeedreamEditorResolution {
-  return getImageEditorResolutionOptions(engine, profile)[0] ?? '1k'
+  if (engine === 'seedream') return '2k'
+  return getKnownGptImage2Resolution(profile?.model ?? '') ?? '1k'
 }
 
 export interface SeedreamEditPromptOptions {
