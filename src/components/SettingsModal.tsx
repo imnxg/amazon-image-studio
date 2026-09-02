@@ -2173,7 +2173,7 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
                 >
                   <div className="mb-5 h-[88px] w-[88px] overflow-hidden rounded-full border border-gray-200/80 bg-white shadow-sm transition-transform group-hover:scale-[1.02] dark:border-white/[0.12]">
                     <img
-                      src="/aria-avatar.png"
+                      src={`${import.meta.env.BASE_URL}aria-avatar.png`}
                       alt="Ali-Aria 头像"
                       width={88}
                       height={88}
