@@ -109,6 +109,8 @@ export interface AppSettings {
   amazonPlannerProfileId: string
   apiSetupMode: ApiSetupMode
   customStyleReferences: CustomStyleReference[]
+  /** Amazon Planner 用户上传的视觉模板图；图片本体保存在 IndexedDB。 */
+  amazonUploadedStyleReferences: AmazonUploadedStyleReference[]
 }
 
 // ===== 任务参数 =====
@@ -359,6 +361,14 @@ export interface CustomStyleReference {
   updatedAt: number
 }
 
+export interface AmazonUploadedStyleReference {
+  id: string
+  title: string
+  imageId: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface AmazonPlannerSession {
   id: string
   title: string
@@ -382,6 +392,8 @@ export interface AmazonPlannerSession {
   selectedStyleReferenceImageId?: string | null
   selectedCustomStyleReferenceId?: string | null
   selectedCustomStyleReferenceSnapshot?: CustomStyleReference | null
+  selectedUploadedStyleReferenceId?: string | null
+  selectedUploadedStyleReferenceSnapshot?: AmazonUploadedStyleReference | null
   styleDensityMode?: AmazonStyleDensityMode
   imagePlans: AmazonPlannerSessionImagePlan[]
   aPlusPlans: AmazonPlannerSessionAPlusPlan[]

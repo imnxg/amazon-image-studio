@@ -55,7 +55,7 @@ import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, getInputImageLimitForSettings, normalizeParamsForSettings } from './lib/paramCompatibility'
-import { prepareReferenceImageAndMaskPayload } from './lib/referenceImagePayload'
+import { prepareReferenceImageAndMaskPayload, prepareReferenceImagePayload, type PlannerReferenceImagePayload } from './lib/referenceImagePayload'
 import { getTaskHistoryCategory } from './lib/taskHistory'
 import { isAmazonListingMainSlot } from './lib/listingPlanner'
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
@@ -4625,6 +4625,22 @@ export async function createInputImageFromFile(file: File): Promise<InputImage |
   if (!file.type.startsWith('image/')) return null
   const dataUrl = await fileToDataUrl(file)
   return createInputImageFromDataUrl(dataUrl)
+}
+
+/** 读取并压缩 Amazon Planner 用户模板图后再保存；不会把原始大文件写入图片库。 */
+export async function createCompressedInputImageFromFile(file: File): Promise<{
+  image: InputImage
+  payload: PlannerReferenceImagePayload
+} | null> {
+  if (!file.type.startsWith('image/')) return null
+  const rawDataUrl = await fileToDataUrl(file)
+  const payload = await prepareReferenceImagePayload([rawDataUrl])
+  const dataUrl = payload.dataUrls[0]
+  if (!dataUrl) throw new Error('模板图压缩结果为空，请换一张图片后重试')
+  return {
+    image: await createInputImageFromDataUrl(dataUrl),
+    payload,
+  }
 }
 
 export async function createInputImageFromDataUrl(dataUrl: string): Promise<InputImage> {

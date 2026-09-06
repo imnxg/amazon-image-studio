@@ -4,6 +4,7 @@ import type {
   ApiProvider,
   ApiSetupMode,
   AppSettings,
+  AmazonUploadedStyleReference,
   CustomStyleReference,
   CustomProviderContentType,
   CustomProviderDefinition,
@@ -642,6 +643,67 @@ function mergeImportedCustomStyleReferences(current: CustomStyleReference[], imp
   return next
 }
 
+function normalizeAmazonUploadedStyleReferences(value: unknown): AmazonUploadedStyleReference[] {
+  if (!Array.isArray(value)) return []
+  const usedIds = new Set<string>()
+  const usedImageIds = new Set<string>()
+  return value
+    .map((item, index): AmazonUploadedStyleReference | null => {
+      if (!isRecord(item)) return null
+      const imageId = typeof item.imageId === 'string' ? item.imageId.trim() : ''
+      if (!imageId || usedImageIds.has(imageId)) return null
+      const rawId = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `uploaded-style-${index + 1}`
+      let id = rawId
+      let suffix = 2
+      while (usedIds.has(id)) {
+        id = `${rawId}-${suffix}`
+        suffix += 1
+      }
+      usedIds.add(id)
+      usedImageIds.add(imageId)
+      const createdAt = typeof item.createdAt === 'number' && Number.isFinite(item.createdAt) ? item.createdAt : Date.now()
+      const updatedAt = typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : createdAt
+      const fallbackTitle = index === 0 ? '我的模板图' : `我的模板图${index}`
+      return {
+        id,
+        title: normalizeStyleText(item.title, fallbackTitle),
+        imageId,
+        createdAt,
+        updatedAt,
+      }
+    })
+    .filter((item): item is AmazonUploadedStyleReference => Boolean(item))
+}
+
+function createImportedAmazonUploadedStyleReferenceId(baseId: string, usedIds: Set<string>): string {
+  const root = baseId.trim() || 'uploaded-style'
+  let index = 2
+  let candidate = `${root}-imported`
+  while (usedIds.has(candidate)) {
+    candidate = `${root}-imported-${index}`
+    index += 1
+  }
+  usedIds.add(candidate)
+  return candidate
+}
+
+function mergeImportedAmazonUploadedStyleReferences(
+  current: AmazonUploadedStyleReference[],
+  imported: AmazonUploadedStyleReference[],
+): AmazonUploadedStyleReference[] {
+  const usedIds = new Set(current.map((item) => item.id))
+  const existingImageIds = new Set(current.map((item) => item.imageId))
+  const next = [...current]
+  for (const item of imported) {
+    if (existingImageIds.has(item.imageId)) continue
+    const id = usedIds.has(item.id) ? createImportedAmazonUploadedStyleReferenceId(item.id, usedIds) : item.id
+    usedIds.add(id)
+    existingImageIds.add(item.imageId)
+    next.push({ ...item, id })
+  }
+  return next
+}
+
 export function isOfficialDeepSeekPlannerProfile(profile: Pick<ApiProfile, 'provider' | 'baseUrl' | 'apiMode'>): boolean {
   if (profile.provider !== 'openai' || (profile.apiMode !== 'responses' && profile.apiMode !== 'chat')) return false
   const rawBaseUrl = profile.baseUrl.trim()
@@ -1011,6 +1073,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown, options
     amazonPlannerProfileId,
     apiSetupMode,
     customStyleReferences: normalizeCustomStyleReferences(record.customStyleReferences),
+    amazonUploadedStyleReferences: normalizeAmazonUploadedStyleReferences(record.amazonUploadedStyleReferences),
   }
 }
 
@@ -1243,6 +1306,7 @@ function isDefaultAmazonPlannerProfile(profile: ApiProfile): boolean {
 function hasOnlyDefaultProfiles(settings: AppSettings): boolean {
   return settings.customProviders.length === 0 &&
     settings.customStyleReferences.length === 0 &&
+    settings.amazonUploadedStyleReferences.length === 0 &&
     settings.profiles.length === 2 &&
     settings.activeProfileId === DEFAULT_OPENAI_PROFILE_ID &&
     settings.seedreamEditorProfileId === '' &&
@@ -1370,6 +1434,10 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
   const existingKeys = new Set(current.profiles.map(getApiProfileDedupKey))
   const { providers: customProviders, providerIdMap } = mergeImportedCustomProviders(current.customProviders, imported.customProviders)
   const customStyleReferences = mergeImportedCustomStyleReferences(current.customStyleReferences, imported.customStyleReferences)
+  const amazonUploadedStyleReferences = mergeImportedAmazonUploadedStyleReferences(
+    current.amazonUploadedStyleReferences,
+    imported.amazonUploadedStyleReferences,
+  )
   const importedProfiles = imported.profiles
     .map((profile) => providerIdMap.has(profile.provider)
       ? { ...profile, provider: providerIdMap.get(profile.provider) ?? profile.provider }
@@ -1393,6 +1461,7 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
     ...current,
     customProviders,
     customStyleReferences,
+    amazonUploadedStyleReferences,
     profiles,
     activeProfileId: current.activeProfileId,
     seedreamEditorProfileId,
@@ -1420,6 +1489,7 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,
   agentWebSearch: false,
   customStyleReferences: [],
+  amazonUploadedStyleReferences: [],
   profiles: createDefaultProfilePair(),
   activeProfileId: DEFAULT_OPENAI_PROFILE_ID,
   seedreamEditorProfileId: '',

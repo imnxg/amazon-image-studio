@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { addImageFromFile, ensureImageCached, submitTask, useStore } from '../store'
+import { addImageFromFile, createCompressedInputImageFromFile, ensureImageCached, submitTask, useStore } from '../store'
 import { getAmazonPlannerProfile, getHomeApiProfile, isAliyunQwenImageProfile, isOfficialDeepSeekPlannerProfile, validateApiProfile } from '../lib/apiProfiles'
 import { getInputImageLimitForSettings } from '../lib/paramCompatibility'
 import {
@@ -65,7 +65,7 @@ import {
   sanitizeStyleReferenceEditState,
 } from '../lib/styleReferences'
 import { DEFAULT_PARAMS } from '../types'
-import type { AmazonPlannerSession, CustomStyleReference, StyleReferenceEditState } from '../types'
+import type { AmazonPlannerSession, AmazonUploadedStyleReference, CustomStyleReference, StyleReferenceEditState } from '../types'
 import StyleReferenceEditorModal from './StyleReferenceEditorModal'
 import StylePaletteLegend from './StylePaletteLegend'
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, EditIcon, EyeIcon, HistoryIcon, PhotoIcon, PlusIcon, RefreshIcon, TrashIcon } from './icons'
@@ -95,8 +95,10 @@ type PlannerActionProgressMap = Record<string, PlannerActionProgress>
 type MobileActionDock = 'left' | 'right' | null
 type APlusModuleSpecsByType = Partial<Record<APlusContentType, AmazonAPlusModuleSpec[]>>
 type SelectedStyleReference = {
+  source: 'preset' | 'custom' | 'uploaded'
   presetId: string | null
   customStyleReferenceId: string | null
+  uploadedStyleReferenceId: string | null
   imageId: string
   dataUrl: string
   label: string
@@ -118,6 +120,30 @@ function createPlannerSessionId() {
 
 function createCustomStyleReferenceId() {
   return `custom-style-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createUploadedStyleReferenceId() {
+  return `uploaded-style-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function getNextUploadedStyleReferenceTitle(references: AmazonUploadedStyleReference[]) {
+  const usedTitles = new Set(references.map((reference) => reference.title.trim()))
+  const baseTitle = '我的模板图'
+  let index = references.length === 0 ? 0 : references.length
+  let candidate = index === 0 ? baseTitle : `${baseTitle}${index}`
+  while (usedTitles.has(candidate)) {
+    index += 1
+    candidate = `${baseTitle}${index}`
+  }
+  return candidate
+}
+
+function getUploadedStyleReferenceVisualMeta(reference: AmazonUploadedStyleReference) {
+  return {
+    label: reference.title,
+    description: '参考上传图片的配色、光影、对比度、材质和整体视觉质感，不复制原图文字、布局、产品或场景。',
+    palette: [] as string[],
+  }
 }
 
 function normalizeHistoryTitle(value: string) {
@@ -409,6 +435,10 @@ export default function AmazonPlanner() {
   const [isLoadingStylePreset, setIsLoadingStylePreset] = useState(false)
   const [styleError, setStyleError] = useState('')
   const [customStyleImageDataUrls, setCustomStyleImageDataUrls] = useState<Record<string, string>>({})
+  const [uploadedStyleImageDataUrls, setUploadedStyleImageDataUrls] = useState<Record<string, string>>({})
+  const [isUploadingStyleReference, setIsUploadingStyleReference] = useState(false)
+  const [renamingUploadedStyleReferenceId, setRenamingUploadedStyleReferenceId] = useState<string | null>(null)
+  const [uploadedStyleTitleDraft, setUploadedStyleTitleDraft] = useState('')
   const [styleEditor, setStyleEditor] = useState<{
     mode: 'preset' | 'custom'
     title: string
@@ -428,6 +458,8 @@ export default function AmazonPlanner() {
   const [referencePayloadNotice, setReferencePayloadNotice] = useState('')
   const [actionProgress, setActionProgress] = useState<PlannerActionProgressMap>({})
   const [mobileActionDock, setMobileActionDock] = useState<MobileActionDock>(null)
+  const styleFileInputRef = useRef<HTMLInputElement>(null)
+  const lastAppliedStyleImageIdRef = useRef<string | null>(null)
   const resolutionTier = resolution === '4k' ? '4K' : '2K'
   const marketplace = useMemo(() => getAmazonMarketplace(marketplaceId), [marketplaceId])
   const listingSlotRange = formatAmazonListingSlotRange(listingImageCount)
@@ -442,6 +474,7 @@ export default function AmazonPlanner() {
   const selectedAPlusPlan = selectedAPlusPlanIndex == null ? null : aPlusPlansWithSizes[selectedAPlusPlanIndex] ?? null
   const selectedAPlusText = selectedAPlusPlan ? formatAPlusModuleText(selectedAPlusPlan) : ''
   const customStyleReferences = settings.customStyleReferences ?? []
+  const uploadedStyleReferences = settings.amazonUploadedStyleReferences ?? []
   const selectedStylePreset = getStylePresetById(selectedStylePresetId)
   const selectedStyleImage = selectedStyleReference
   const selectedStyleLabel = selectedStyleReference?.label ?? selectedStylePreset?.label ?? ''
@@ -645,6 +678,68 @@ export default function AmazonPlanner() {
     }
   }, [customStyleReferences])
 
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(uploadedStyleReferences.map(async (reference) => {
+      const dataUrl = reference.imageId ? await ensureImageCached(reference.imageId) : ''
+      return [reference.id, dataUrl] as const
+    }))
+      .then((entries) => {
+        if (cancelled) return
+        const loaded = entries.reduce<Record<string, string>>((result, [id, dataUrl]) => {
+          if (dataUrl) result[id] = dataUrl
+          return result
+        }, {})
+        setUploadedStyleImageDataUrls(loaded)
+      })
+      .catch(() => {
+        if (!cancelled) setUploadedStyleImageDataUrls({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [uploadedStyleReferences])
+
+  const selectedStyleSyncKey = selectedStyleImage?.imageId
+    ? `${selectedStyleReference?.source ?? ''}:${selectedStyleImage.imageId}:${selectedStyleLabel}`
+    : ''
+
+  useEffect(() => {
+    if (!currentActionFilled) {
+      lastAppliedStyleImageIdRef.current = null
+      return
+    }
+    if (!selectedStyleSyncKey || !activePrompt.trim() || lastAppliedStyleImageIdRef.current === selectedStyleSyncKey) return
+    lastAppliedStyleImageIdRef.current = selectedStyleSyncKey
+    setPrompt(activePrompt)
+    setPendingTaskCategory({
+      mode: 'prompt-match',
+      prompt: activePrompt,
+      category: {
+        productTitle: draft.productTitle.trim(),
+        workflow: plannerMode === 'aplus' ? 'amazon-aplus' : 'amazon-listing',
+        amazonSlot: plannerMode === 'aplus' ? selectedAPlusPlan?.slot : selectedPlan?.slot,
+        ...(plannerMode === 'aplus' ? { aPlusType } : {}),
+        marketplaceId,
+        ...(usesStyleReferenceForActivePlan && selectedStyleImage?.imageId ? { styleReferenceImageId: selectedStyleImage.imageId } : {}),
+      },
+    })
+  }, [
+    activePrompt,
+    aPlusType,
+    currentActionFilled,
+    draft.productTitle,
+    marketplaceId,
+    plannerMode,
+    selectedAPlusPlan?.slot,
+    selectedPlan?.slot,
+    selectedStyleImage?.imageId,
+    selectedStyleSyncKey,
+    setPendingTaskCategory,
+    setPrompt,
+    usesStyleReferenceForActivePlan,
+  ])
+
   const upsertPlannerSessionList = (session: AmazonPlannerSession) => {
     setPlannerSessions((current) => sortPlannerSessions([
       session,
@@ -683,6 +778,12 @@ export default function AmazonPlanner() {
       selectedCustomStyleReferenceSnapshot: hasOverride('selectedCustomStyleReferenceSnapshot') ? overrides.selectedCustomStyleReferenceSnapshot : (
         selectedStyleReference?.customStyleReferenceId
           ? customStyleReferences.find((style) => style.id === selectedStyleReference.customStyleReferenceId) ?? null
+          : null
+      ),
+      selectedUploadedStyleReferenceId: hasOverride('selectedUploadedStyleReferenceId') ? overrides.selectedUploadedStyleReferenceId : selectedStyleReference?.uploadedStyleReferenceId ?? null,
+      selectedUploadedStyleReferenceSnapshot: hasOverride('selectedUploadedStyleReferenceSnapshot') ? overrides.selectedUploadedStyleReferenceSnapshot : (
+        selectedStyleReference?.uploadedStyleReferenceId
+          ? uploadedStyleReferences.find((reference) => reference.id === selectedStyleReference.uploadedStyleReferenceId) ?? null
           : null
       ),
       styleDensityMode: overrides.styleDensityMode ?? styleDensityMode,
@@ -839,8 +940,10 @@ export default function AmazonPlanner() {
       const result = await ensureStylePresetImageStored(preset.id, controller.signal)
       if (stylePresetAbortControllerRef.current !== controller) return null
       const reference: SelectedStyleReference = {
+        source: 'preset',
         presetId: preset.id,
         customStyleReferenceId: null,
+        uploadedStyleReferenceId: null,
         imageId: result.imageId,
         dataUrl: result.dataUrl,
         label: preset.label,
@@ -848,12 +951,16 @@ export default function AmazonPlanner() {
         palette: preset.palette,
       }
       setSelectedStyleReference(reference)
+      setPendingTaskCategory(null)
+      lastAppliedStyleImageIdRef.current = null
       if (options.persist !== false) {
         await savePlannerSession({
           selectedStylePresetId: preset.id,
           selectedStyleReferenceImageId: result.imageId,
           selectedCustomStyleReferenceId: null,
           selectedCustomStyleReferenceSnapshot: null,
+          selectedUploadedStyleReferenceId: null,
+          selectedUploadedStyleReferenceSnapshot: null,
           styleCandidates: [],
           styleImages: [],
           selectedStyleIndex: null,
@@ -906,8 +1013,10 @@ export default function AmazonPlanner() {
 
       const meta = getCustomStyleReferenceVisualMeta(normalizedCustomStyle)
       const reference: SelectedStyleReference = {
+        source: 'custom',
         presetId: normalizedCustomStyle.basePresetId ?? null,
         customStyleReferenceId: normalizedCustomStyle.id,
+        uploadedStyleReferenceId: null,
         imageId,
         dataUrl,
         label: meta.label,
@@ -916,6 +1025,8 @@ export default function AmazonPlanner() {
       }
       setSelectedStylePresetId(normalizedCustomStyle.basePresetId ?? null)
       setSelectedStyleReference(reference)
+      setPendingTaskCategory(null)
+      lastAppliedStyleImageIdRef.current = null
       setCustomStyleImageDataUrls((current) => ({ ...current, [normalizedCustomStyle.id]: dataUrl }))
       if (options.persist !== false) {
         await savePlannerSession({
@@ -923,6 +1034,8 @@ export default function AmazonPlanner() {
           selectedStyleReferenceImageId: imageId,
           selectedCustomStyleReferenceId: normalizedCustomStyle.id,
           selectedCustomStyleReferenceSnapshot: normalizedCustomStyle,
+          selectedUploadedStyleReferenceId: null,
+          selectedUploadedStyleReferenceSnapshot: null,
           styleDensityMode: normalizedCustomStyle.editState.density,
           styleCandidates: [],
           styleImages: [],
@@ -940,6 +1053,168 @@ export default function AmazonPlanner() {
     } finally {
       setIsLoadingStylePreset(false)
     }
+  }
+
+  const selectUploadedStyleReference = async (
+    uploadedStyle: AmazonUploadedStyleReference,
+    options: { silent?: boolean; persist?: boolean; dataUrl?: string } = {},
+  ) => {
+    stylePresetAbortControllerRef.current?.abort()
+    stylePresetAbortControllerRef.current = null
+    setIsLoadingStylePreset(true)
+    setStyleError('')
+    try {
+      const dataUrl = options.dataUrl || (uploadedStyle.imageId ? await ensureImageCached(uploadedStyle.imageId) : '')
+      if (!dataUrl) throw new Error('用户模板图不存在，请重新上传。')
+      const meta = getUploadedStyleReferenceVisualMeta(uploadedStyle)
+      const reference: SelectedStyleReference = {
+        source: 'uploaded',
+        presetId: null,
+        customStyleReferenceId: null,
+        uploadedStyleReferenceId: uploadedStyle.id,
+        imageId: uploadedStyle.imageId,
+        dataUrl,
+        label: meta.label,
+        description: meta.description,
+        palette: meta.palette,
+      }
+      setSelectedStylePresetId(null)
+      setSelectedStyleReference(reference)
+      setPendingTaskCategory(null)
+      lastAppliedStyleImageIdRef.current = null
+      setUploadedStyleImageDataUrls((current) => ({ ...current, [uploadedStyle.id]: dataUrl }))
+      if (options.persist !== false) {
+        await savePlannerSession({
+          selectedStylePresetId: null,
+          selectedStyleReferenceImageId: uploadedStyle.imageId,
+          selectedCustomStyleReferenceId: null,
+          selectedCustomStyleReferenceSnapshot: null,
+          selectedUploadedStyleReferenceId: uploadedStyle.id,
+          selectedUploadedStyleReferenceSnapshot: uploadedStyle,
+          styleCandidates: [],
+          styleImages: [],
+          selectedStyleIndex: null,
+        })
+      }
+      if (!options.silent) showToast(`已选择「${uploadedStyle.title}」用户模板`, 'success')
+      return reference
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setStyleError(message)
+      showToast('用户模板图加载失败', 'error')
+      return null
+    } finally {
+      setIsLoadingStylePreset(false)
+    }
+  }
+
+  const handleUploadedStyleReferenceFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      showToast('请选择图片文件', 'error')
+      return
+    }
+    if (isUploadingStyleReference) return
+
+    stylePresetAbortControllerRef.current?.abort()
+    stylePresetAbortControllerRef.current = null
+    setIsUploadingStyleReference(true)
+    setStyleError('')
+    try {
+      const result = await createCompressedInputImageFromFile(file)
+      if (!result) return
+
+      const latestSettings = useStore.getState().settings
+      const currentLibrary = latestSettings.amazonUploadedStyleReferences ?? []
+      const existing = currentLibrary.find((reference) => reference.imageId === result.image.id)
+      if (existing) {
+        await selectUploadedStyleReference(existing, { silent: true, dataUrl: result.image.dataUrl })
+        showToast(`这张图片已存在，已切换到「${existing.title}」`, 'info')
+        return
+      }
+
+      const now = Date.now()
+      const uploadedStyle: AmazonUploadedStyleReference = {
+        id: createUploadedStyleReferenceId(),
+        title: getNextUploadedStyleReferenceTitle(currentLibrary),
+        imageId: result.image.id,
+        createdAt: now,
+        updatedAt: now,
+      }
+      setSettings({ amazonUploadedStyleReferences: [uploadedStyle, ...currentLibrary] })
+      setUploadedStyleImageDataUrls((current) => ({ ...current, [uploadedStyle.id]: result.image.dataUrl }))
+      const reference = await selectUploadedStyleReference(uploadedStyle, {
+        silent: true,
+        dataUrl: result.image.dataUrl,
+      })
+      if (!reference) return
+      const compressionNotice = result.payload.notice.replace('参考图', '模板图')
+      showToast(`${compressionNotice || '模板图已压缩'}，已保存并选中「${uploadedStyle.title}」`, 'success')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast(`模板图上传失败：${message.replace(/参考图/g, '模板图')}`, 'error')
+    } finally {
+      setIsUploadingStyleReference(false)
+    }
+  }
+
+  const handleUploadedStyleReferenceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) await handleUploadedStyleReferenceFile(file)
+  }
+
+  const beginRenameUploadedStyleReference = (reference: AmazonUploadedStyleReference) => {
+    setRenamingUploadedStyleReferenceId(reference.id)
+    setUploadedStyleTitleDraft(reference.title)
+  }
+
+  const cancelRenameUploadedStyleReference = () => {
+    setRenamingUploadedStyleReferenceId(null)
+    setUploadedStyleTitleDraft('')
+  }
+
+  const saveUploadedStyleReferenceTitle = (reference: AmazonUploadedStyleReference) => {
+    const title = uploadedStyleTitleDraft.replace(/\s+/g, ' ').trim()
+    if (!title) {
+      showToast('模板名称不能为空', 'error')
+      return
+    }
+    const latestSettings = useStore.getState().settings
+    const currentLibrary = latestSettings.amazonUploadedStyleReferences ?? []
+    if (currentLibrary.some((item) => item.id !== reference.id && item.title.trim() === title)) {
+      showToast('模板名称已存在，请换一个名称', 'error')
+      return
+    }
+    const updatedReference = { ...reference, title, updatedAt: Date.now() }
+    setSettings({
+      amazonUploadedStyleReferences: currentLibrary.map((item) => item.id === reference.id ? updatedReference : item),
+    })
+    if (selectedStyleReference?.uploadedStyleReferenceId === reference.id) {
+      setSelectedStyleReference((current) => current ? { ...current, label: title } : current)
+      updateCurrentPlannerSession({
+        selectedUploadedStyleReferenceId: reference.id,
+        selectedUploadedStyleReferenceSnapshot: updatedReference,
+      })
+    }
+    cancelRenameUploadedStyleReference()
+    showToast('模板名称已更新', 'success')
+  }
+
+  const deleteUploadedStyleReference = (reference: AmazonUploadedStyleReference) => {
+    const latestSettings = useStore.getState().settings
+    setSettings({
+      amazonUploadedStyleReferences: (latestSettings.amazonUploadedStyleReferences ?? []).filter((item) => item.id !== reference.id),
+    })
+    setUploadedStyleImageDataUrls((current) => {
+      const next = { ...current }
+      delete next[reference.id]
+      return next
+    })
+    if (selectedStyleReference?.uploadedStyleReferenceId === reference.id) {
+      void selectStylePreset(DEFAULT_STYLE_PRESET_ID, { silent: true })
+    }
+    if (renamingUploadedStyleReferenceId === reference.id) cancelRenameUploadedStyleReference()
+    showToast('用户模板已删除', 'success')
   }
 
   const openStyleEditorFromPreset = (preset: StylePreset) => {
@@ -1038,6 +1313,21 @@ export default function AmazonPlanner() {
     })
   }
 
+  const updateUploadedStylePreview = (
+    uploadedStyle: AmazonUploadedStyleReference,
+    event: ReactMouseEvent<HTMLElement>,
+  ) => {
+    const dataUrl = uploadedStyleImageDataUrls[uploadedStyle.id]
+    if (!dataUrl) return
+    const meta = getUploadedStyleReferenceVisualMeta(uploadedStyle)
+    setStylePreview({
+      dataUrl,
+      label: meta.label,
+      description: meta.description,
+      ...getStylePreviewPosition(event.clientX, event.clientY),
+    })
+  }
+
   const openStylePresetPreview = async (presetId: string) => {
     const reference = selectedStyleReference?.presetId === presetId
       ? selectedStyleReference
@@ -1049,6 +1339,13 @@ export default function AmazonPlanner() {
     const reference = selectedStyleReference?.customStyleReferenceId === customStyle.id
       ? selectedStyleReference
       : await selectCustomStyleReference(customStyle, { silent: true })
+    if (reference?.imageId) setLightboxImageId(reference.imageId, [reference.imageId])
+  }
+
+  const openUploadedStylePreview = async (uploadedStyle: AmazonUploadedStyleReference) => {
+    const reference = selectedStyleReference?.uploadedStyleReferenceId === uploadedStyle.id
+      ? selectedStyleReference
+      : await selectUploadedStyleReference(uploadedStyle, { silent: true })
     if (reference?.imageId) setLightboxImageId(reference.imageId, [reference.imageId])
   }
 
@@ -1106,6 +1403,8 @@ export default function AmazonPlanner() {
       selectedStyleReferenceImageId: null,
       selectedCustomStyleReferenceId: null,
       selectedCustomStyleReferenceSnapshot: null,
+      selectedUploadedStyleReferenceId: null,
+      selectedUploadedStyleReferenceSnapshot: null,
       styleDensityMode,
       imagePlans: nextImagePlans,
       aPlusPlans: nextAPlusPlans,
@@ -1121,6 +1420,8 @@ export default function AmazonPlanner() {
             selectedStyleReferenceImageId: reference.imageId,
             selectedCustomStyleReferenceId: null,
             selectedCustomStyleReferenceSnapshot: null,
+            selectedUploadedStyleReferenceId: null,
+            selectedUploadedStyleReferenceSnapshot: null,
             updatedAt: Date.now(),
           }
           void putAmazonPlannerSession(nextSession)
@@ -1352,12 +1653,38 @@ export default function AmazonPlanner() {
       : DEFAULT_STYLE_PRESET_ID
     let restoredStyleReference: SelectedStyleReference | null = null
     let restoredCustomStyleReference: CustomStyleReference | null = null
+    let restoredUploadedStyleReference: AmazonUploadedStyleReference | null = null
     let restoredStyleError = ''
+
+    const sessionUploadedStyle = session.selectedUploadedStyleReferenceId
+      ? uploadedStyleReferences.find((reference) => reference.id === session.selectedUploadedStyleReferenceId) ?? session.selectedUploadedStyleReferenceSnapshot ?? null
+      : session.selectedUploadedStyleReferenceSnapshot ?? null
+    if (sessionUploadedStyle) {
+      const dataUrl = sessionUploadedStyle.imageId ? await ensureImageCached(sessionUploadedStyle.imageId) : ''
+      if (dataUrl) {
+        const meta = getUploadedStyleReferenceVisualMeta(sessionUploadedStyle)
+        restoredUploadedStyleReference = sessionUploadedStyle
+        restoredStyleReference = {
+          source: 'uploaded',
+          presetId: null,
+          customStyleReferenceId: null,
+          uploadedStyleReferenceId: sessionUploadedStyle.id,
+          imageId: sessionUploadedStyle.imageId,
+          dataUrl,
+          label: meta.label,
+          description: meta.description,
+          palette: meta.palette,
+        }
+        setUploadedStyleImageDataUrls((current) => ({ ...current, [sessionUploadedStyle.id]: dataUrl }))
+      } else {
+        restoredStyleError = '历史中的用户模板图不存在，已切换为默认风格参考。'
+      }
+    }
 
     const sessionCustomStyle = session.selectedCustomStyleReferenceId
       ? customStyleReferences.find((style) => style.id === session.selectedCustomStyleReferenceId) ?? session.selectedCustomStyleReferenceSnapshot ?? null
       : session.selectedCustomStyleReferenceSnapshot ?? null
-    if (sessionCustomStyle) {
+    if (!restoredStyleReference && sessionCustomStyle) {
       try {
         let customStyle = sessionCustomStyle
         let dataUrl = customStyle.imageId ? await ensureImageCached(customStyle.imageId) : ''
@@ -1381,8 +1708,10 @@ export default function AmazonPlanner() {
         const meta = getCustomStyleReferenceVisualMeta(customStyle)
         restoredCustomStyleReference = customStyle
         restoredStyleReference = {
+          source: 'custom',
           presetId: customStyle.basePresetId ?? null,
           customStyleReferenceId: customStyle.id,
+          uploadedStyleReferenceId: null,
           imageId: customStyle.imageId,
           dataUrl,
           label: meta.label,
@@ -1399,8 +1728,10 @@ export default function AmazonPlanner() {
       if (dataUrl) {
         const preset = getStylePresetById(nextStylePresetId)
         restoredStyleReference = {
+          source: 'preset',
           presetId: preset?.id ?? null,
           customStyleReferenceId: null,
+          uploadedStyleReferenceId: null,
           imageId: session.selectedStyleReferenceImageId,
           dataUrl,
           label: preset?.label ?? '历史风格',
@@ -1417,8 +1748,10 @@ export default function AmazonPlanner() {
         if (dataUrl) {
           const legacyCandidate = session.styleCandidates[session.selectedStyleIndex]
           restoredStyleReference = {
+            source: 'custom',
             presetId: null,
             customStyleReferenceId: null,
+            uploadedStyleReferenceId: null,
             imageId: legacyStyle.imageId,
             dataUrl,
             label: legacyCandidate?.label || '历史风格板',
@@ -1435,8 +1768,10 @@ export default function AmazonPlanner() {
       try {
         const result = await ensureStylePresetImageStored(nextStylePresetId)
         restoredStyleReference = {
+          source: 'preset',
           presetId: nextStylePresetId,
           customStyleReferenceId: null,
+          uploadedStyleReferenceId: null,
           imageId: result.imageId,
           dataUrl: result.dataUrl,
           label: result.preset.label,
@@ -1482,6 +1817,8 @@ export default function AmazonPlanner() {
       selectedStyleReferenceImageId: restoredStyleReference?.imageId ?? null,
       selectedCustomStyleReferenceId: restoredCustomStyleReference?.id ?? null,
       selectedCustomStyleReferenceSnapshot: restoredCustomStyleReference,
+      selectedUploadedStyleReferenceId: restoredUploadedStyleReference?.id ?? null,
+      selectedUploadedStyleReferenceSnapshot: restoredUploadedStyleReference,
       styleDensityMode: restoredCustomStyleReference?.editState.density ?? session.styleDensityMode ?? 'rich',
       updatedAt: Date.now(),
     }
@@ -2177,7 +2514,7 @@ export default function AmazonPlanner() {
                 <div>
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">视觉风格选择</div>
                   <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    选择内置预设，或编辑后保存到“我的风格”。附图和 A+ 正式生图时会隐藏附加到请求末尾。
+                    内置模板主要提供色卡和基础视觉方向。如果你不想使用色卡式模板，可以上传一张喜欢的图片作为替代模板。上传后会替换当前模板，旧模板不会参与生图。
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2195,9 +2532,9 @@ export default function AmazonPlanner() {
                   </div>
                 </div>
               </div>
-              {isLoadingStylePreset && (
+              {(isLoadingStylePreset || isUploadingStyleReference) && (
                 <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-800 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200">
-                  正在加载风格参考图...
+                  {isUploadingStyleReference ? '正在压缩并保存模板图...' : '正在加载风格参考图...'}
                 </div>
               )}
               {styleError && (
@@ -2212,7 +2549,7 @@ export default function AmazonPlanner() {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     {STYLE_PRESETS.map((preset) => {
-                      const isSelected = !selectedStyleReference?.customStyleReferenceId && selectedStyleReference?.presetId === preset.id
+                      const isSelected = selectedStyleReference?.source === 'preset' && selectedStyleReference.presetId === preset.id
                       const isLoading = isLoadingStylePreset && selectedStylePresetId === preset.id
                       const assetUrl = getStylePresetAssetUrl(preset)
                       return (
@@ -2282,59 +2619,161 @@ export default function AmazonPlanner() {
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">我的风格</div>
-                    <span className="text-[11px] text-gray-400">{customStyleReferences.length} 套</span>
+                    <span className="text-[11px] text-gray-400">{customStyleReferences.length + uploadedStyleReferences.length} 套</span>
                   </div>
-                  {customStyleReferences.length > 0 ? (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                      {customStyleReferences.map((customStyle) => {
-                        const meta = getCustomStyleReferenceVisualMeta(customStyle)
-                        const isSelected = selectedStyleReference?.customStyleReferenceId === customStyle.id
-                        const imageUrl = customStyleImageDataUrls[customStyle.id] || ''
-                        return (
-                          <div
-                            key={customStyle.id}
-                            onMouseEnter={(event) => updateCustomStylePreview(customStyle, event)}
-                            onMouseMove={(event) => updateCustomStylePreview(customStyle, event)}
-                            onMouseLeave={() => setStylePreview(null)}
-                            className={`min-w-0 overflow-hidden rounded-xl border text-left transition ${isSelected ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-500/15 dark:border-violet-300/70 dark:bg-violet-500/10' : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-white/[0.08] dark:bg-gray-900 dark:hover:bg-white/[0.05]'}`}
+                  <input
+                    ref={styleFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => void handleUploadedStyleReferenceFileChange(event)}
+                  />
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <button
+                      type="button"
+                      onClick={() => styleFileInputRef.current?.click()}
+                      disabled={isUploadingStyleReference}
+                      className="flex min-h-[250px] min-w-0 flex-col items-center justify-center rounded-xl border border-dashed border-violet-300 bg-violet-50/70 px-4 py-5 text-center transition hover:border-violet-400 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-70 dark:border-violet-300/30 dark:bg-violet-500/10 dark:hover:bg-violet-500/15"
+                    >
+                      <PhotoIcon className="h-8 w-8 text-violet-600 dark:text-violet-300" />
+                      <span className="mt-3 text-xs font-bold text-violet-800 dark:text-violet-100">不想用色卡？上传模板图</span>
+                      <span className="mt-2 text-[11px] leading-relaxed text-violet-700/80 dark:text-violet-200/80">上传后立即替换当前模板，图片会先压缩并保存到这里。</span>
+                    </button>
+                    {customStyleReferences.map((customStyle) => {
+                      const meta = getCustomStyleReferenceVisualMeta(customStyle)
+                      const isSelected = selectedStyleReference?.source === 'custom' && selectedStyleReference.customStyleReferenceId === customStyle.id
+                      const imageUrl = customStyleImageDataUrls[customStyle.id] || ''
+                      return (
+                        <div
+                          key={customStyle.id}
+                          onMouseEnter={(event) => updateCustomStylePreview(customStyle, event)}
+                          onMouseMove={(event) => updateCustomStylePreview(customStyle, event)}
+                          onMouseLeave={() => setStylePreview(null)}
+                          className={`min-w-0 overflow-hidden rounded-xl border text-left transition ${isSelected ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-500/15 dark:border-violet-300/70 dark:bg-violet-500/10' : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-white/[0.08] dark:bg-gray-900 dark:hover:bg-white/[0.05]'}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void selectCustomStyleReference(customStyle)}
+                            className="block w-full text-left"
                           >
-                            <button
-                              type="button"
-                              onClick={() => void selectCustomStyleReference(customStyle)}
-                              className="block w-full text-left"
-                            >
-                              <div className="aspect-square bg-gray-100 dark:bg-white/[0.04]">
-                                {imageUrl ? (
-                                  <img src={imageUrl} alt={meta.label} className="h-full w-full object-cover" />
-                                ) : (
-                                  <div className="flex h-full items-center justify-center text-xs text-gray-400">加载中</div>
+                            <div className="aspect-square bg-gray-100 dark:bg-white/[0.04]">
+                              {imageUrl ? (
+                                <img src={imageUrl} alt={meta.label} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="flex h-full items-center justify-center text-xs text-gray-400">加载中</div>
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="min-w-0 truncate text-xs font-semibold text-gray-900 dark:text-gray-100">{meta.label}</span>
+                                {isSelected && (
+                                  <span className="shrink-0 rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">已选</span>
                                 )}
                               </div>
-                              <div className="p-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="min-w-0 truncate text-xs font-semibold text-gray-900 dark:text-gray-100">{meta.label}</span>
-                                  {isSelected && (
-                                    <span className="shrink-0 rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">已选</span>
-                                  )}
-                                </div>
-                                <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{meta.description}</div>
-                                <div className="mt-2 flex gap-1">
-                                  {meta.palette.map((color, index) => (
-                                    <span
-                                      key={`${customStyle.id}-${color}-${index}`}
-                                      className="h-3 flex-1 rounded-sm border border-black/5 dark:border-white/10"
-                                      style={{ backgroundColor: color }}
-                                      aria-hidden="true"
-                                    />
-                                  ))}
-                                </div>
-                                <StylePaletteLegend palette={meta.palette} className="mt-2" />
+                              <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{meta.description}</div>
+                              <div className="mt-2 flex gap-1">
+                                {meta.palette.map((color, index) => (
+                                  <span
+                                    key={`${customStyle.id}-${color}-${index}`}
+                                    className="h-3 flex-1 rounded-sm border border-black/5 dark:border-white/10"
+                                    style={{ backgroundColor: color }}
+                                    aria-hidden="true"
+                                  />
+                                ))}
                               </div>
+                              <StylePaletteLegend palette={meta.palette} className="mt-2" />
+                            </div>
+                          </button>
+                          <div className="grid grid-cols-3 gap-1 border-t border-gray-100 p-2 dark:border-white/[0.08]">
+                            <button
+                              type="button"
+                              onClick={() => void openCustomStylePreview(customStyle)}
+                              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                            >
+                              <EyeIcon className="h-3.5 w-3.5" />
+                              预览
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => openStyleEditorFromCustom(customStyle)}
+                              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                            >
+                              <EditIcon className="h-3.5 w-3.5" />
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteCustomStyleReference(customStyle)}
+                              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-400/10 dark:hover:text-red-200"
+                            >
+                              <TrashIcon className="h-3.5 w-3.5" />
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {uploadedStyleReferences.map((uploadedStyle) => {
+                      const meta = getUploadedStyleReferenceVisualMeta(uploadedStyle)
+                      const isSelected = selectedStyleReference?.source === 'uploaded' && selectedStyleReference.uploadedStyleReferenceId === uploadedStyle.id
+                      const imageUrl = uploadedStyleImageDataUrls[uploadedStyle.id] || ''
+                      const isRenaming = renamingUploadedStyleReferenceId === uploadedStyle.id
+                      return (
+                        <div
+                          key={uploadedStyle.id}
+                          onMouseEnter={(event) => updateUploadedStylePreview(uploadedStyle, event)}
+                          onMouseMove={(event) => updateUploadedStylePreview(uploadedStyle, event)}
+                          onMouseLeave={() => setStylePreview(null)}
+                          className={`min-w-0 overflow-hidden rounded-xl border text-left transition ${isSelected ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-500/15 dark:border-violet-300/70 dark:bg-violet-500/10' : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-white/[0.08] dark:bg-gray-900 dark:hover:bg-white/[0.05]'}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void selectUploadedStyleReference(uploadedStyle)}
+                            className="block w-full text-left"
+                          >
+                            <div className="flex h-[168px] items-center justify-center bg-gray-100 p-2 dark:bg-white/[0.04]">
+                              {imageUrl ? (
+                                <img src={imageUrl} alt={uploadedStyle.title} className="max-h-full max-w-full object-contain" />
+                              ) : (
+                                <div className="text-xs text-gray-400">加载中</div>
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="min-w-0 truncate text-xs font-semibold text-gray-900 dark:text-gray-100">{uploadedStyle.title}</span>
+                                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 dark:bg-white/[0.08] dark:text-gray-300">用户上传</span>
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">{meta.description}</div>
+                              {isSelected && (
+                                <div className="mt-2 inline-flex rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">已选</div>
+                              )}
+                            </div>
+                          </button>
+                          {isRenaming ? (
+                            <form
+                              className="border-t border-gray-100 p-2 dark:border-white/[0.08]"
+                              onSubmit={(event) => {
+                                event.preventDefault()
+                                saveUploadedStyleReferenceTitle(uploadedStyle)
+                              }}
+                            >
+                              <input
+                                value={uploadedStyleTitleDraft}
+                                onChange={(event) => setUploadedStyleTitleDraft(event.target.value)}
+                                autoFocus
+                                className="ios-field h-8 w-full px-2 text-xs text-gray-800 dark:text-gray-100"
+                                aria-label="模板名称"
+                              />
+                              <div className="mt-1 grid grid-cols-2 gap-1">
+                                <button type="submit" className="h-7 rounded-lg bg-violet-600 text-[11px] font-semibold text-white hover:bg-violet-500">保存</button>
+                                <button type="button" onClick={cancelRenameUploadedStyleReference} className="h-7 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]">取消</button>
+                              </div>
+                            </form>
+                          ) : (
                             <div className="grid grid-cols-3 gap-1 border-t border-gray-100 p-2 dark:border-white/[0.08]">
                               <button
                                 type="button"
-                                onClick={() => void openCustomStylePreview(customStyle)}
+                                onClick={() => void openUploadedStylePreview(uploadedStyle)}
                                 className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
                               >
                                 <EyeIcon className="h-3.5 w-3.5" />
@@ -2342,28 +2781,29 @@ export default function AmazonPlanner() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => openStyleEditorFromCustom(customStyle)}
+                                onClick={() => beginRenameUploadedStyleReference(uploadedStyle)}
                                 className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
                               >
                                 <EditIcon className="h-3.5 w-3.5" />
-                                编辑
+                                重命名
                               </button>
                               <button
                                 type="button"
-                                onClick={() => deleteCustomStyleReference(customStyle)}
+                                onClick={() => deleteUploadedStyleReference(uploadedStyle)}
                                 className="inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[11px] font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-400/10 dark:hover:text-red-200"
                               >
                                 <TrashIcon className="h-3.5 w-3.5" />
                                 删除
                               </button>
                             </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-gray-300 bg-white/60 px-3 py-4 text-center text-xs text-gray-500 dark:border-white/[0.12] dark:bg-gray-900/50 dark:text-gray-400">
-                      还没有自定义风格。点击内置预设的“编辑”保存到这里。
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {customStyleReferences.length === 0 && uploadedStyleReferences.length === 0 && (
+                    <div className="mt-2 rounded-xl border border-dashed border-gray-300 bg-white/60 px-3 py-3 text-center text-xs text-gray-500 dark:border-white/[0.12] dark:bg-gray-900/50 dark:text-gray-400">
+                      还没有保存的自定义风格或用户模板。也可以点击内置预设的“编辑”保存一套自己的风格。
                     </div>
                   )}
                 </div>
@@ -2384,7 +2824,9 @@ export default function AmazonPlanner() {
                 <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs leading-relaxed text-violet-800 dark:border-violet-300/20 dark:bg-violet-400/10 dark:text-violet-200">
                   {isMainListingPlan
                     ? `已选择「${selectedStyleLabel}」，但当前 MAIN 主图不会附加这张风格参考图；切换到附图或 A+ 时才会作为隐藏参考。`
-                    : `已选择「${selectedStyleLabel}」。正式生成时会隐藏附加这张风格参考图作为最后一张参考图，用于统一字体感觉、色板、光影、材质和标注样式，不复制其中占位文字、固定版式或产品摆放。`}
+                    : selectedStyleReference?.source === 'uploaded'
+                      ? `已选择「${selectedStyleLabel}」用户模板，已替换色卡式内置模板。正式生成时只会把这张图片作为最后一张隐藏风格参考图，用于参考配色、光影、材质和整体视觉质感，不复制原图文字、布局、产品或场景。`
+                      : `已选择「${selectedStyleLabel}」。正式生成时会隐藏附加这张风格参考图作为最后一张参考图，用于统一字体感觉、色板、光影、材质和标注样式，不复制其中占位文字、固定版式或产品摆放。`}
                   <StylePaletteLegend palette={selectedVisualStyle?.palette ?? []} mode="summary" className="mt-2" />
                 </div>
               )}

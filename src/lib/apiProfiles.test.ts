@@ -203,6 +203,51 @@ describe('mergeImportedSettings', () => {
     expect(merged.customStyleReferences[1]?.editState.palette[0]).toBe('#FFFFFF')
   })
 
+  it('normalizes and merges Amazon uploaded style references by image id', () => {
+    const current = normalizeSettings({
+      amazonUploadedStyleReferences: [
+        {
+          id: 'uploaded-style-a',
+          title: '我的模板图',
+          imageId: 'uploaded-image-a',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    })
+
+    const merged = mergeImportedSettings(current, {
+      amazonUploadedStyleReferences: [
+        {
+          id: 'uploaded-style-a',
+          title: '同一张图片',
+          imageId: 'uploaded-image-a',
+          createdAt: 2,
+          updatedAt: 2,
+        },
+        {
+          id: 'uploaded-style-a',
+          title: '我的模板图1',
+          imageId: 'uploaded-image-b',
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+    })
+
+    expect(merged.amazonUploadedStyleReferences).toHaveLength(2)
+    expect(merged.amazonUploadedStyleReferences[0]).toMatchObject({
+      id: 'uploaded-style-a',
+      title: '我的模板图',
+      imageId: 'uploaded-image-a',
+    })
+    expect(merged.amazonUploadedStyleReferences[1]).toMatchObject({
+      id: 'uploaded-style-a-2',
+      title: '我的模板图1',
+      imageId: 'uploaded-image-b',
+    })
+  })
+
   it('keeps a legacy planner import while creating a separate image profile when current settings are untouched', () => {
     const merged = mergeImportedSettings(DEFAULT_SETTINGS, {
       baseUrl: 'https://api.example.com/v1',

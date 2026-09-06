@@ -467,6 +467,35 @@ describe('mask draft lifecycle in store actions', () => {
     })
   })
 
+  it('uses only the currently selected uploaded style reference after replacing a preset', async () => {
+    const oldPresetImage = { id: 'old-preset-style-image', dataUrl: 'data:image/png;base64,old-preset' }
+    const uploadedStyleImage = { id: 'uploaded-style-image', dataUrl: 'data:image/webp;base64,uploaded' }
+    await putImage(imageA)
+    await putImage(oldPresetImage)
+    await putImage(uploadedStyleImage)
+    useStore.setState({
+      prompt: 'listing prompt with uploaded style',
+      inputImages: [imageA],
+      pendingTaskCategory: {
+        mode: 'prompt-match',
+        prompt: 'listing prompt with uploaded style',
+        category: {
+          productTitle: 'Large Folding Umbrella',
+          workflow: 'amazon-listing',
+          amazonSlot: 'PT01',
+          styleReferenceImageId: uploadedStyleImage.id,
+        },
+      },
+    })
+
+    await submitTask()
+
+    const task = useStore.getState().tasks[0]
+    expect(task?.inputImageIds).toEqual([imageA.id, uploadedStyleImage.id])
+    expect(task?.inputImageIds).not.toContain(oldPresetImage.id)
+    expect(task?.category?.styleReferenceImageId).toBe(uploadedStyleImage.id)
+  })
+
   it('does not append a hidden style reference image for an Amazon MAIN prompt', async () => {
     const styleImage = { id: 'style-reference-image', dataUrl: 'data:image/png;base64,style' }
     await putImage(imageA)
