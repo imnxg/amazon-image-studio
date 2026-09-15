@@ -1862,7 +1862,7 @@ export default function SettingsModal({ scope = 'home' }: SettingsModalProps) {
                                 <div className="flex items-start justify-between gap-4">
                                   <div>
                                     <div className="text-xs font-medium text-gray-600 dark:text-gray-300">API 代理</div>
-                                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{apiProxyLocked ? '当前部署已锁定为开启。' : '独立策划连接需要跨域代理时开启。'}</p>
+                                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{apiProxyLocked ? '当前部署已锁定为开启。' : '独立策划连接跨域失败时开启；开启后请求使用同源 /api-proxy。'}</p>
                                   </div>
                                   <button
                                     type="button"

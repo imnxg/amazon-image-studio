@@ -525,6 +525,16 @@ dist/
 
 如果使用仓库的 Docker/Nginx 部署并需要同源 API 代理，可设置 `ENABLE_API_PROXY=true` 和 `API_PROXY_URL`。OpenAI 官方通常使用 `API_PROXY_URL=https://api.openai.com/v1`；火山方舟 Seedream 使用 `API_PROXY_URL=https://ark.cn-beijing.volces.com/api/v3`，前端会请求同源 `/api-proxy/images/generations` 并由 Nginx 转发到 Ark `/api/v3/images/generations`。Docker/Nginx 还内置 `/image-proxy/`，用于下载火山返回但未开放 CORS 的图片 URL。
 
+AI 策划配置与生图配置独立保存。若策划 API 未开放浏览器跨域访问，请在部署环境启用代理后，在设置页的“AI 策划 → 高级设置”单独打开“API 代理”：
+
+```text
+ENABLE_API_PROXY=true
+LOCK_API_PROXY=false
+API_PROXY_URL=https://api.openai.com/v1
+```
+
+Chat Completions 策划会请求同源 `/api-proxy/chat/completions`，Responses 策划会请求同源 `/api-proxy/responses`。`API_PROXY_URL` 应填写 OpenAI 兼容 API 根地址（通常包含 `/v1`，但应以服务商实际路径为准）。开启代理后，生图配置的 URL、Key 和模型不会被修改。
+
 推荐配置：
 
 ```text
